@@ -10,6 +10,7 @@
 //   @"asidex:router:amaury-v1"
 
 new
+  _sqrt,
   stdout(`rho:io:stdout`),
   adminCap,
   // Token A state
@@ -31,6 +32,24 @@ in {
   balA!({}) | allowA!({}) | supplyA!(0) |
   balB!({}) | allowB!({}) | supplyB!(0) |
   reserveACh!(0) | reserveBCh!(0) | lpSupplyCh!(0) | lpBalances!({}) |
+
+  // ------------------ helpers ------------------
+  contract _sqrt(@x, return) = {
+    if (x <= 0) { return!(0) }
+    else {
+      new loop, out in {
+        contract loop(@z) = {
+          if (z * z <= x and (z + 1) * (z + 1) > x) { out!(z) }
+          else {
+            if (z * z > x) { loop!(z - 1) }
+            else { loop!(z + 1) }
+          }
+        } |
+        loop!(x / 2 + 1) |
+        for (@v <- out) { return!(v) }
+      }
+    }
+  } |
 
   // ------------------ token A ------------------
   new _transferA in {
