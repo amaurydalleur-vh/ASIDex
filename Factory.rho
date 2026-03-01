@@ -1,0 +1,144 @@
+// ============================================================
+//  ASI-DEX: Factory Contract
+//
+//  Tracks all deployed Pair contracts.
+//  In Uniswap V2 the Factory deploys pairs on-chain;
+//  on ASI:Chain / RChain contracts are pre-deployed and
+//  registered manually due to the lack of CREATE opcode.
+//
+//  Workflow:
+//    1. Deploy Token.rho twice → get URI_A, URI_B
+//    2. Deploy Pair.rho with URI_A + URI_B substituted → get PAIR_URI
+//    3. Call factory!("registerPair", URI_A, URI_B, PAIR_URI, return)
+//    4. UI calls factory!("getPair", URI_A, URI_B, return) to resolve pairs
+//
+//  Registry keys exported:
+//    factory!("registerPair", tokenAUri, tokenBUri, pairUri, adminKey, return)
+//    factory!("getPair", tokenAUri, tokenBUri, return)  -> pairUri | Nil
+//    factory!("allPairs", return)                       -> List of pairUris
+//    factory!("allPairsLength", return)                 -> Int
+//    factory!("pairExists", tokenAUri, tokenBUri, return) -> Bool
+// ============================================================
+
+new
+  factoryContract,
+  // State: map of (tokenA, tokenB) -> pairUri
+  // Stored as canonical sorted key to avoid duplicates
+  pairRegistry,
+  pairList,
+  // Admin cap
+  adminCap,
+  // Registry
+  insertArbitrary(`rho:registry:insertArbitrary`),
+  uriOut,
+  stdout(`rho:io:stdout`)
+in {
+
+  // ---- Initialize state ----
+  pairRegistry!({}) |
+  pairList!([]) |
+
+  // !! Replace with your admin secret !!
+  adminCap!("FACTORY_ADMIN_SECRET") |
+
+  // ---- Helper: canonical key (sort URIs lexicographically) ----
+  // This ensures getPair(A,B) == getPair(B,A)
+  new _sortedKey in {
+    contract _sortedKey(@uriA, @uriB, return) = {
+      if (uriA < uriB) { return!((uriA, uriB)) }
+      else              { return!((uriB, uriA)) }
+    } |
+
+    // ---- registerPair (admin only) ----
+    contract factoryContract(@"registerPair", @tokenAUri, @tokenBUri, @pairUri, adminKey, return) = {
+      for (@key <- adminKey) {
+        for (@cap <- adminCap) {
+          if (key != cap) {
+            adminCap!(cap) |
+            return!((false, "Unauthorized"))
+          } else {
+            adminCap!(cap) |
+            new sortedCh in {
+              _sortedKey!(tokenAUri, tokenBUri, *sortedCh) |
+              for (@sorted <- sortedCh) {
+                for (@registry <- pairRegistry) {
+                  match registry.get(sorted) {
+                    Nil => {
+                      for (@list <- pairList) {
+                        pairRegistry!(registry.set(sorted, pairUri)) |
+                        pairList!(list ++ [pairUri]) |
+                        return!((true, "Pair registered", pairUri))
+                      }
+                    }
+                    _ => {
+                      pairRegistry!(registry) |
+                      return!((false, "Pair already exists"))
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    } |
+
+    // ---- getPair ----
+    contract factoryContract(@"getPair", @tokenAUri, @tokenBUri, return) = {
+      new sortedCh in {
+        _sortedKey!(tokenAUri, tokenBUri, *sortedCh) |
+        for (@sorted <- sortedCh) {
+          for (@registry <- pairRegistry) {
+            pairRegistry!(registry) |
+            match registry.get(sorted) {
+              Nil     => return!(Nil)
+              pairUri => return!(pairUri)
+            }
+          }
+        }
+      }
+    } |
+
+    // ---- pairExists ----
+    contract factoryContract(@"pairExists", @tokenAUri, @tokenBUri, return) = {
+      new sortedCh in {
+        _sortedKey!(tokenAUri, tokenBUri, *sortedCh) |
+        for (@sorted <- sortedCh) {
+          for (@registry <- pairRegistry) {
+            pairRegistry!(registry) |
+            match registry.get(sorted) {
+              Nil => return!(false)
+              _   => return!(true)
+            }
+          }
+        }
+      }
+    } |
+
+    // ---- allPairs ----
+    contract factoryContract(@"allPairs", return) = {
+      for (@list <- pairList) {
+        pairList!(list) |
+        return!(list)
+      }
+    } |
+
+    // ---- allPairsLength ----
+    contract factoryContract(@"allPairsLength", return) = {
+      for (@list <- pairList) {
+        pairList!(list) |
+        return!(list.length())
+      }
+    }
+
+  } // end _sortedKey block
+
+  |
+
+  // ---- Register and print URI ----
+  insertArbitrary!(*factoryContract, *uriOut) |
+  for (@uri <- uriOut) {
+    stdout!(["Factory deployed at URI:", uri])
+    // Save this URI — the Router and UI need it!
+  }
+}

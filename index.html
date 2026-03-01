@@ -1,0 +1,1443 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>ASI·DEX — Decentralized Exchange</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400&family=Syne:wght@400;500;700;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg:       #050810;
+    --surface:  #0d1220;
+    --border:   #1a2540;
+    --accent:   #00e5ff;
+    --accent2:  #7b5ea7;
+    --green:    #00e676;
+    --red:      #ff4458;
+    --yellow:   #ffd740;
+    --text:     #e8eaf6;
+    --muted:    #546e7a;
+    --panel:    #0a1628;
+    --glow:     0 0 24px rgba(0,229,255,0.15);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Syne', sans-serif;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* ---- Background grid ---- */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(0,229,255,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0,229,255,0.03) 1px, transparent 1px);
+    background-size: 48px 48px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  /* ---- Ambient glow orbs ---- */
+  .orb {
+    position: fixed;
+    border-radius: 50%;
+    filter: blur(120px);
+    pointer-events: none;
+    z-index: 0;
+    opacity: 0.3;
+  }
+  .orb-1 { width: 600px; height: 600px; background: #0066ff; top: -200px; right: -200px; }
+  .orb-2 { width: 400px; height: 400px; background: #7b5ea7; bottom: -100px; left: -100px; }
+
+  /* ---- Layout ---- */
+  #root { position: relative; z-index: 1; }
+
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 20px 40px;
+    border-bottom: 1px solid var(--border);
+    backdrop-filter: blur(10px);
+    background: rgba(5,8,16,0.8);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+
+  .logo {
+    font-family: 'Space Mono', monospace;
+    font-size: 1.4rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+  }
+  .logo span { color: var(--accent); }
+
+  .nav-tabs {
+    display: flex;
+    gap: 4px;
+    background: var(--surface);
+    padding: 4px;
+    border-radius: 12px;
+    border: 1px solid var(--border);
+  }
+
+  .nav-tab {
+    padding: 8px 20px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 0.9rem;
+    font-weight: 500;
+    transition: all 0.2s;
+    color: var(--muted);
+    border: none;
+    background: transparent;
+    font-family: 'Syne', sans-serif;
+  }
+  .nav-tab.active {
+    background: var(--accent);
+    color: #000;
+    font-weight: 700;
+  }
+  .nav-tab:hover:not(.active) { color: var(--text); background: var(--border); }
+
+  .wallet-btn {
+    padding: 10px 20px;
+    border-radius: 10px;
+    border: 1px solid var(--accent);
+    background: transparent;
+    color: var(--accent);
+    font-family: 'Space Mono', monospace;
+    font-size: 0.8rem;
+    cursor: pointer;
+    transition: all 0.2s;
+    letter-spacing: 0.05em;
+  }
+  .wallet-btn:hover { background: rgba(0,229,255,0.1); box-shadow: var(--glow); }
+  .wallet-btn.connected { border-color: var(--green); color: var(--green); }
+
+  main {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 40px 20px;
+  }
+
+  /* ---- Cards ---- */
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 28px;
+    position: relative;
+    overflow: hidden;
+  }
+  .card::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: 20px;
+    padding: 1px;
+    background: linear-gradient(135deg, rgba(0,229,255,0.2), transparent 60%);
+    -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    pointer-events: none;
+  }
+
+  .card-title {
+    font-size: 1.1rem;
+    font-weight: 700;
+    margin-bottom: 20px;
+    color: var(--text);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .card-title .dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 8px var(--accent);
+  }
+
+  /* ---- Token Input ---- */
+  .token-input-wrap {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 16px;
+    margin-bottom: 8px;
+    transition: border-color 0.2s;
+  }
+  .token-input-wrap:focus-within { border-color: var(--accent); }
+
+  .token-input-label {
+    font-size: 0.75rem;
+    color: var(--muted);
+    margin-bottom: 8px;
+    font-family: 'Space Mono', monospace;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .token-input-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .token-amount-input {
+    flex: 1;
+    background: transparent;
+    border: none;
+    outline: none;
+    font-size: 1.8rem;
+    font-family: 'Space Mono', monospace;
+    color: var(--text);
+    min-width: 0;
+  }
+  .token-amount-input::placeholder { color: var(--muted); }
+
+  .token-selector {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 8px 14px;
+    cursor: pointer;
+    white-space: nowrap;
+    font-weight: 700;
+    font-size: 0.95rem;
+    transition: all 0.2s;
+  }
+  .token-selector:hover { border-color: var(--accent); }
+
+  .token-icon {
+    width: 28px; height: 28px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.75rem;
+    font-weight: 700;
+    font-family: 'Space Mono', monospace;
+  }
+  .token-icon.a { background: linear-gradient(135deg, #00e5ff, #0066ff); color: #000; }
+  .token-icon.b { background: linear-gradient(135deg, #7b5ea7, #e040fb); color: #fff; }
+
+  .token-balance {
+    font-size: 0.75rem;
+    color: var(--muted);
+    font-family: 'Space Mono', monospace;
+    margin-top: 6px;
+  }
+  .token-balance span {
+    color: var(--accent);
+    cursor: pointer;
+  }
+  .token-balance span:hover { text-decoration: underline; }
+
+  /* ---- Swap arrow ---- */
+  .swap-arrow-wrap {
+    display: flex;
+    justify-content: center;
+    margin: -4px 0;
+    position: relative;
+    z-index: 2;
+  }
+  .swap-arrow-btn {
+    width: 40px; height: 40px;
+    border-radius: 12px;
+    border: 2px solid var(--border);
+    background: var(--surface);
+    color: var(--accent);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.1rem;
+    transition: all 0.2s;
+  }
+  .swap-arrow-btn:hover {
+    border-color: var(--accent);
+    transform: rotate(180deg);
+    box-shadow: var(--glow);
+  }
+
+  /* ---- Info rows ---- */
+  .info-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 6px 0;
+    font-size: 0.85rem;
+    border-bottom: 1px solid rgba(26,37,64,0.5);
+  }
+  .info-row:last-child { border-bottom: none; }
+  .info-row .label { color: var(--muted); }
+  .info-row .value { font-family: 'Space Mono', monospace; font-size: 0.8rem; }
+  .info-row .value.green { color: var(--green); }
+  .info-row .value.red   { color: var(--red); }
+  .info-row .value.yellow { color: var(--yellow); }
+
+  /* ---- Slippage settings ---- */
+  .slippage-wrap {
+    display: flex;
+    gap: 6px;
+    margin-top: 12px;
+    align-items: center;
+  }
+  .slippage-label { font-size: 0.75rem; color: var(--muted); margin-right: 4px; }
+  .slippage-btn {
+    padding: 5px 12px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--muted);
+    font-size: 0.78rem;
+    cursor: pointer;
+    font-family: 'Space Mono', monospace;
+    transition: all 0.15s;
+  }
+  .slippage-btn:hover, .slippage-btn.active {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+  .slippage-custom {
+    width: 60px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    font-family: 'Space Mono', monospace;
+    font-size: 0.78rem;
+    padding: 5px 8px;
+    outline: none;
+  }
+  .slippage-custom:focus { border-color: var(--accent); }
+
+  /* ---- Action button ---- */
+  .action-btn {
+    width: 100%;
+    padding: 16px;
+    border-radius: 14px;
+    border: none;
+    font-family: 'Syne', sans-serif;
+    font-size: 1rem;
+    font-weight: 700;
+    cursor: pointer;
+    margin-top: 16px;
+    transition: all 0.2s;
+    letter-spacing: 0.02em;
+  }
+  .action-btn.primary {
+    background: linear-gradient(135deg, var(--accent), #0066ff);
+    color: #000;
+    box-shadow: 0 4px 24px rgba(0,229,255,0.25);
+  }
+  .action-btn.primary:hover:not(:disabled) {
+    transform: translateY(-1px);
+    box-shadow: 0 8px 32px rgba(0,229,255,0.35);
+  }
+  .action-btn.primary:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+    transform: none;
+  }
+  .action-btn.secondary {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--muted);
+  }
+  .action-btn.secondary:hover { border-color: var(--accent); color: var(--accent); }
+
+  /* ---- Two-panel layout ---- */
+  .two-col { display: grid; grid-template-columns: 420px 1fr; gap: 24px; align-items: start; }
+  @media (max-width: 800px) { .two-col { grid-template-columns: 1fr; } }
+
+  /* ---- Pool stats ---- */
+  .stat-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin-bottom: 20px;
+  }
+
+  .stat-box {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px;
+  }
+  .stat-box .stat-label {
+    font-size: 0.72rem;
+    color: var(--muted);
+    font-family: 'Space Mono', monospace;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+  .stat-box .stat-value {
+    font-size: 1.2rem;
+    font-weight: 700;
+    font-family: 'Space Mono', monospace;
+    color: var(--text);
+  }
+  .stat-box .stat-sub {
+    font-size: 0.72rem;
+    color: var(--muted);
+    margin-top: 2px;
+  }
+
+  /* ---- Price ratio bar ---- */
+  .price-bar {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px;
+    margin-bottom: 16px;
+  }
+  .price-bar-label {
+    font-size: 0.72rem;
+    color: var(--muted);
+    font-family: 'Space Mono', monospace;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-bottom: 10px;
+  }
+  .price-bar-track {
+    height: 6px;
+    background: var(--border);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+  .price-bar-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--accent), #0066ff);
+    border-radius: 3px;
+    transition: width 0.5s ease;
+  }
+  .price-bar-labels {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 6px;
+    font-family: 'Space Mono', monospace;
+    font-size: 0.72rem;
+    color: var(--muted);
+  }
+
+  /* ---- LP position ---- */
+  .lp-position {
+    background: linear-gradient(135deg, rgba(0,229,255,0.05), rgba(123,94,167,0.05));
+    border: 1px solid rgba(0,229,255,0.2);
+    border-radius: 14px;
+    padding: 20px;
+    margin-top: 16px;
+  }
+  .lp-position-title {
+    font-size: 0.8rem;
+    color: var(--accent);
+    font-family: 'Space Mono', monospace;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    margin-bottom: 12px;
+  }
+
+  /* ---- Status / Toast ---- */
+  .toast {
+    position: fixed;
+    bottom: 30px;
+    right: 30px;
+    padding: 14px 20px;
+    border-radius: 12px;
+    font-size: 0.875rem;
+    font-family: 'Space Mono', monospace;
+    max-width: 360px;
+    z-index: 999;
+    animation: slideIn 0.3s ease;
+    border: 1px solid;
+  }
+  .toast.success { background: rgba(0,230,118,0.1); border-color: var(--green); color: var(--green); }
+  .toast.error   { background: rgba(255,68,88,0.1);  border-color: var(--red);   color: var(--red); }
+  .toast.info    { background: rgba(0,229,255,0.1);  border-color: var(--accent); color: var(--accent); }
+
+  @keyframes slideIn {
+    from { transform: translateX(100px); opacity: 0; }
+    to   { transform: translateX(0);     opacity: 1; }
+  }
+
+  /* ---- Spinner ---- */
+  .spinner {
+    width: 18px; height: 18px;
+    border: 2px solid transparent;
+    border-top-color: currentColor;
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+    display: inline-block;
+    vertical-align: middle;
+    margin-right: 8px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ---- Tabs inside cards ---- */
+  .inner-tabs {
+    display: flex;
+    gap: 0;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 20px;
+  }
+  .inner-tab {
+    padding: 10px 20px;
+    border: none;
+    background: transparent;
+    color: var(--muted);
+    font-family: 'Syne', sans-serif;
+    font-size: 0.9rem;
+    font-weight: 500;
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+    transition: all 0.2s;
+  }
+  .inner-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+  .inner-tab:hover:not(.active) { color: var(--text); }
+
+  /* ---- Network badge ---- */
+  .network-badge {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.72rem;
+    font-family: 'Space Mono', monospace;
+    color: var(--muted);
+    padding: 6px 12px;
+    border: 1px solid var(--border);
+    border-radius: 20px;
+  }
+  .network-dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--green);
+    box-shadow: 0 0 6px var(--green);
+    animation: pulse 2s infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+
+  .section-gap { margin-top: 32px; }
+  .divider { border: none; border-top: 1px solid var(--border); margin: 20px 0; }
+
+  .mono { font-family: 'Space Mono', monospace; }
+  .text-sm { font-size: 0.82rem; }
+  .text-muted { color: var(--muted); }
+  .text-accent { color: var(--accent); }
+  .text-green { color: var(--green); }
+  .text-red { color: var(--red); }
+
+  .flex { display: flex; }
+  .items-center { align-items: center; }
+  .gap-2 { gap: 8px; }
+  .mt-2 { margin-top: 8px; }
+  .mt-3 { margin-top: 12px; }
+  .mb-2 { margin-bottom: 8px; }
+  .w-full { width: 100%; }
+
+  /* ---- Impact warning ---- */
+  .impact-warning {
+    padding: 10px 14px;
+    background: rgba(255,68,88,0.08);
+    border: 1px solid rgba(255,68,88,0.3);
+    border-radius: 10px;
+    font-size: 0.8rem;
+    color: var(--red);
+    font-family: 'Space Mono', monospace;
+    margin-top: 10px;
+  }
+</style>
+</head>
+<body>
+<div class="orb orb-1"></div>
+<div class="orb orb-2"></div>
+<div id="root"></div>
+
+<script type="module">
+// ---- Inline simplified SDK (no bundler needed for DevNet testing) ----
+// In production, import from rnode.js
+
+const RNODE = {
+  EXPLORE: "http://54.152.57.201:40453/explore-deploy",
+  DEPLOY: "http://54.152.57.201:40453/deploy",
+  CHAIN_ID: "asi-chain-devnet",
+  IDE_URL: "https://wallet.dev.asichain.io",
+};
+
+const URI_DEFAULTS = {
+  TOKEN_A: "rho:id:REPLACE_TOKEN_A",
+  TOKEN_B: "rho:id:REPLACE_TOKEN_B",
+  FACTORY: "rho:id:REPLACE_FACTORY",
+  ROUTER: "rho:id:REPLACE_ROUTER",
+  PAIR_AB: "rho:id:REPLACE_PAIR",
+};
+const URI_STORAGE_KEY = "asidex_uris_v1";
+const URIS = (() => {
+  try {
+    const saved = JSON.parse(localStorage.getItem(URI_STORAGE_KEY) || "{}");
+    return { ...URI_DEFAULTS, ...saved };
+  } catch {
+    return { ...URI_DEFAULTS };
+  }
+})();
+function saveUris(next) {
+  Object.assign(URIS, next);
+  localStorage.setItem(URI_STORAGE_KEY, JSON.stringify(URIS));
+}
+
+const TOKENS = [
+  { uri: URIS.TOKEN_A, symbol: "TKNA", name: "Token A", cls: "a", decimals: 18 },
+  { uri: URIS.TOKEN_B, symbol: "TKNB", name: "Token B", cls: "b", decimals: 18 },
+];
+
+// ---- Mini state store ----
+const state = {
+  tab: "swap",
+  liquidityTab: "add",
+  wallet: null,
+  slippage: 0.5,
+  swapIn: { tokenIdx: 0, amount: "" },
+  swapOut: { tokenIdx: 1, amount: "" },
+  liqA: "", liqB: "",
+  lpRemove: "",
+  pool: { reserveA: 0, reserveB: 0, lpSupply: 0, userLP: 0 },
+  balances: { 0: 0, 1: 0 },
+  loading: false,
+  toast: null,
+};
+
+// ---- Helpers ----
+function fromWei(n, d = 18) {
+  if (n == null) return "0.000000";
+  const bi = BigInt(String(n));
+  const base = 10n ** BigInt(d);
+  const whole = bi / base;
+  const frac = (bi % base).toString().padStart(d, "0").slice(0, 6);
+  return `${whole.toString()}.${frac}`;
+}
+function toWei(n, d = 18) {
+  if (!n || Number.isNaN(Number(n))) return 0;
+  const s = String(n).trim();
+  if (!s) return 0;
+  const [wholeRaw, fracRaw = ""] = s.split(".");
+  const whole = wholeRaw === "" ? "0" : wholeRaw;
+  const frac = fracRaw.padEnd(d, "0").slice(0, d);
+  return (BigInt(whole || "0") * (10n ** BigInt(d)) + BigInt(frac || "0")).toString();
+}
+function shortAddr(a) {
+  return a ? a.slice(0, 8) + "..." + a.slice(-4) : "";
+}
+function hasConfiguredUris() {
+  return !Object.values(URIS).some((v) => String(v).includes("REPLACE_"));
+}
+function openUriConfig() {
+  const tokenA = prompt("Token A URI (rho:id:...)", URIS.TOKEN_A);
+  if (tokenA == null) return;
+  const tokenB = prompt("Token B URI (rho:id:...)", URIS.TOKEN_B);
+  if (tokenB == null) return;
+  const factory = prompt("Factory URI (rho:id:...)", URIS.FACTORY);
+  if (factory == null) return;
+  const router = prompt("Router URI (rho:id:...)", URIS.ROUTER);
+  if (router == null) return;
+  const pair = prompt("Pair URI (rho:id:...)", URIS.PAIR_AB);
+  if (pair == null) return;
+  saveUris({ TOKEN_A: tokenA, TOKEN_B: tokenB, FACTORY: factory, ROUTER: router, PAIR_AB: pair });
+  TOKENS[0].uri = URIS.TOKEN_A;
+  TOKENS[1].uri = URIS.TOKEN_B;
+  showToast("Contract URIs updated.", "success");
+  refreshOnchain();
+}
+function priceImpact(amtIn, rIn, rOut) {
+  if (!rIn || !rOut || !amtIn) return 0;
+  const fee = amtIn * 997;
+  const out = (fee * rOut) / (rIn * 1000 + fee);
+  const mid = rOut / rIn;
+  const exec = out / amtIn;
+  return Math.max(0, Math.abs((mid - exec) / mid) * 100);
+}
+
+// ---- Explore deploy (read-only RNode query) ----
+async function explore(term) {
+  try {
+    const r = await fetch(RNODE.EXPLORE, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ term }),
+    });
+    if (!r.ok) throw new Error(`explore HTTP ${r.status}`);
+    const data = await r.json();
+    return data.expr?.[0] ?? null;
+  } catch { return null; }
+}
+
+function findExprInts(node, out = []) {
+  if (!node || typeof node !== "object") return out;
+  if (node.ExprInt && node.ExprInt.data != null) out.push(node.ExprInt.data);
+  for (const v of Object.values(node)) {
+    if (Array.isArray(v)) v.forEach((x) => findExprInts(x, out));
+    else if (v && typeof v === "object") findExprInts(v, out);
+  }
+  return out;
+}
+
+function parseTupleInts(expr, expected = 2) {
+  if (!expr) return Array(expected).fill(0);
+  const ints = findExprInts(expr).map((x) => Number(x));
+  while (ints.length < expected) ints.push(0);
+  return ints.slice(0, expected);
+}
+
+async function queryInt(term) {
+  const expr = await explore(term);
+  const ints = findExprInts(expr);
+  return ints.length ? Number(ints[0]) : 0;
+}
+
+async function fetchPoolData() {
+  if (!hasConfiguredUris()) return { reserveA: 0, reserveB: 0, lpSupply: 0 };
+  const reserveTerm = `
+    new ret, l(\`rho:registry:lookup\`) in {
+      l!(\`${URIS.PAIR_AB}\`, *ret) |
+      for (pair <- ret) {
+        new r in {
+          pair!("getReserves", *r) |
+          for (@res <- r) { ret!(res) }
+        }
+      }
+    }`;
+  const supplyTerm = `
+    new ret, l(\`rho:registry:lookup\`) in {
+      l!(\`${URIS.PAIR_AB}\`, *ret) |
+      for (pair <- ret) {
+        new s in {
+          pair!("getLPSupply", *s) |
+          for (@sup <- s) { ret!(sup) }
+        }
+      }
+    }`;
+
+  const reservesExpr = await explore(reserveTerm);
+  const [reserveA, reserveB] = parseTupleInts(reservesExpr, 2);
+  const lpSupply = await queryInt(supplyTerm);
+  return { reserveA, reserveB, lpSupply };
+}
+
+function calcAmountOut(amtIn, rIn, rOut) {
+  if (!amtIn || !rIn || !rOut) return 0;
+  const fee = amtIn * 997;
+  return (fee * rOut) / (rIn * 1000 + fee);
+}
+
+// ---- Wallet connection ----
+async function connectWallet() {
+  if (!window.fetchBrowserWallet) {
+    showToast("Please install the ASI Alliance Wallet extension", "error");
+    return;
+  }
+  try {
+    await window.fetchBrowserWallet.wallet.enable(RNODE.CHAIN_ID);
+    const accounts = await window.fetchBrowserWallet.wallet.getAccounts?.() ?? [];
+    if (accounts.length > 0) {
+      state.wallet = accounts[0].address;
+      showToast("Wallet connected: " + shortAddr(state.wallet), "success");
+      render();
+      await refreshOnchain();
+    }
+  } catch (e) {
+    showToast("Connection failed: " + e.message, "error");
+  }
+}
+
+async function fetchTokenBalance(tokenUri, wallet) {
+  const term = `
+    new ret, l(\`rho:registry:lookup\`) in {
+      l!(\`${tokenUri}\`, *ret) |
+      for (token <- ret) {
+        new b in {
+          token!("balanceOf", "${wallet}", *b) |
+          for (@bal <- b) { ret!(bal) }
+        }
+      }
+    }`;
+  return await queryInt(term);
+}
+
+async function fetchLPBalance(wallet) {
+  const term = `
+    new ret, l(\`rho:registry:lookup\`) in {
+      l!(\`${URIS.PAIR_AB}\`, *ret) |
+      for (pair <- ret) {
+        new b in {
+          pair!("getLPBalance", "${wallet}", *b) |
+          for (@bal <- b) { ret!(bal) }
+        }
+      }
+    }`;
+  return await queryInt(term);
+}
+
+async function refreshOnchain() {
+  const pool = await fetchPoolData();
+  state.pool = { ...pool, userLP: 0 };
+  if (state.wallet && hasConfiguredUris()) {
+    const [b0, b1, lp] = await Promise.all([
+      fetchTokenBalance(URIS.TOKEN_A, state.wallet),
+      fetchTokenBalance(URIS.TOKEN_B, state.wallet),
+      fetchLPBalance(state.wallet),
+    ]);
+    state.balances = { 0: b0, 1: b1 };
+    state.pool.userLP = lp;
+  } else {
+    state.balances = { 0: 0, 1: 0 };
+  }
+  render();
+}
+
+async function deployWithWalletOrFallback(term) {
+  const wbw = window.fetchBrowserWallet;
+  if (!wbw) {
+    await navigator.clipboard.writeText(term);
+    window.open(RNODE.IDE_URL, "_blank", "noopener");
+    throw new Error("Wallet extension not detected. Rholang copied for wallet IDE deploy.");
+  }
+  const signer = wbw.rholang?.signDeploy;
+  if (!signer) {
+    await navigator.clipboard.writeText(term);
+    window.open(RNODE.IDE_URL, "_blank", "noopener");
+    throw new Error("Wallet deploy API unavailable. Rholang copied for wallet IDE deploy.");
+  }
+  const payload = {
+    term,
+    timestamp: Date.now(),
+    phloPrice: 1,
+    phloLimit: 1000000,
+    validAfterBlockNumber: -1,
+  };
+  const signed = await signer(payload);
+  const resp = await fetch(RNODE.DEPLOY, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      ...payload,
+      sig: signed?.signature,
+      deployer: signed?.pub_key,
+    }),
+  });
+  if (!resp.ok) throw new Error(`Deploy failed ${resp.status}`);
+  return await resp.json();
+}
+
+// ---- Toast ----
+function showToast(msg, type = "info") {
+  state.toast = { msg, type };
+  render();
+  setTimeout(() => { state.toast = null; render(); }, 4000);
+}
+
+// ---- Compute swap output ----
+function updateSwapOutput() {
+  const amtIn = toWei(state.swapIn.amount);
+  const isAtoB = state.swapIn.tokenIdx === 0;
+  const rIn  = isAtoB ? state.pool.reserveA : state.pool.reserveB;
+  const rOut = isAtoB ? state.pool.reserveB : state.pool.reserveA;
+  const out = calcAmountOut(amtIn, rIn, rOut);
+  return out ? fromWei(out) : "";
+}
+
+// ---- Actions ----
+async function doSwap() {
+  if (!state.wallet) { showToast("Connect your wallet first", "error"); return; }
+  if (!state.swapIn.amount) { showToast("Enter an amount", "error"); return; }
+  if (!hasConfiguredUris()) { showToast("Configure contract URIs first.", "error"); return; }
+  state.loading = true;
+  render();
+  try {
+    const tkIn = TOKENS[state.swapIn.tokenIdx];
+    const tkOut = TOKENS[state.swapOut.tokenIdx];
+    const amtIn = toWei(state.swapIn.amount);
+    const out = calcAmountOut(
+      Number(amtIn),
+      state.swapIn.tokenIdx === 0 ? state.pool.reserveA : state.pool.reserveB,
+      state.swapIn.tokenIdx === 0 ? state.pool.reserveB : state.pool.reserveA
+    );
+    const minOut = Math.floor(out * (1 - state.slippage / 100));
+    const term = `
+      new ret, l(\`rho:registry:lookup\`) in {
+        l!(\`${URIS.ROUTER}\`, *ret) |
+        for (router <- ret) {
+          new s in {
+            router!("swapExactTokensForTokens",
+              "${state.wallet}",
+              ${amtIn},
+              ${minOut},
+              "${tkIn.uri}",
+              "${tkOut.uri}",
+              "${state.wallet}",
+              *s
+            ) |
+            for (@res <- s) { ret!(res) }
+          }
+        }
+      }`;
+    const approveInTerm = `
+      new ret, l(\`rho:registry:lookup\`) in {
+        l!(\`${tkIn.uri}\`, *ret) |
+        for (token <- ret) {
+          new a in {
+            token!("approve", "${state.wallet}", "${state.wallet}", ${amtIn}, *a) |
+            for (@res <- a) { ret!(res) }
+          }
+        }
+      }`;
+    await deployWithWalletOrFallback(approveInTerm);
+    await deployWithWalletOrFallback(term);
+    showToast("Swap deploy submitted.", "success");
+    state.swapIn.amount = "";
+    await refreshOnchain();
+  } catch (e) {
+    showToast(e.message || "Swap failed", "error");
+  } finally {
+    state.loading = false;
+    render();
+  }
+}
+
+async function doAddLiquidity() {
+  if (!state.wallet) { showToast("Connect your wallet first", "error"); return; }
+  if (!state.liqA) { showToast("Enter token A amount", "error"); return; }
+  if (!hasConfiguredUris()) { showToast("Configure contract URIs first.", "error"); return; }
+  state.loading = true;
+  render();
+  try {
+    const amtA = toWei(state.liqA);
+    const amtB =
+      state.pool.reserveA > 0
+        ? String(Math.floor((Number(amtA) * state.pool.reserveB) / state.pool.reserveA))
+        : toWei(state.liqB || "0");
+    if (!amtB || Number(amtB) <= 0) throw new Error("Invalid token B amount.");
+
+    // Devnet PoC nuance: Pair.rho currently calls transferFrom with caller=provider,
+    // so allowance is checked on (owner=provider, spender=provider).
+    const approveATerm = `
+      new ret, l(\`rho:registry:lookup\`) in {
+        l!(\`${URIS.TOKEN_A}\`, *ret) |
+        for (token <- ret) {
+          new a in {
+            token!("approve", "${state.wallet}", "${state.wallet}", ${amtA}, *a) |
+            for (@res <- a) { ret!(res) }
+          }
+        }
+      }`;
+    const approveBTerm = `
+      new ret, l(\`rho:registry:lookup\`) in {
+        l!(\`${URIS.TOKEN_B}\`, *ret) |
+        for (token <- ret) {
+          new a in {
+            token!("approve", "${state.wallet}", "${state.wallet}", ${amtB}, *a) |
+            for (@res <- a) { ret!(res) }
+          }
+        }
+      }`;
+    const addTerm = `
+      new ret, l(\`rho:registry:lookup\`) in {
+        l!(\`${URIS.ROUTER}\`, *ret) |
+        for (router <- ret) {
+          new a in {
+            router!("addLiquidity",
+              "${state.wallet}",
+              "${URIS.TOKEN_A}",
+              "${URIS.TOKEN_B}",
+              ${amtA},
+              ${amtB},
+              0,
+              *a
+            ) |
+            for (@res <- a) { ret!(res) }
+          }
+        }
+      }`;
+
+    await deployWithWalletOrFallback(approveATerm);
+    await deployWithWalletOrFallback(approveBTerm);
+    await deployWithWalletOrFallback(addTerm);
+    showToast("Liquidity deploys submitted (approve A/B + add).", "success");
+    state.liqA = "";
+    state.liqB = "";
+    await refreshOnchain();
+  } catch (e) {
+    showToast(e.message || "Add liquidity failed", "error");
+  } finally {
+    state.loading = false;
+    render();
+  }
+}
+
+async function doRemoveLiquidity() {
+  if (!state.wallet) { showToast("Connect your wallet first", "error"); return; }
+  if (!state.lpRemove) { showToast("Enter LP amount to remove", "error"); return; }
+  if (!hasConfiguredUris()) { showToast("Configure contract URIs first.", "error"); return; }
+  state.loading = true;
+  render();
+  try {
+    const lpAmt = toWei(state.lpRemove);
+    const term = `
+      new ret, l(\`rho:registry:lookup\`) in {
+        l!(\`${URIS.ROUTER}\`, *ret) |
+        for (router <- ret) {
+          new a in {
+            router!("removeLiquidity",
+              "${state.wallet}",
+              "${URIS.TOKEN_A}",
+              "${URIS.TOKEN_B}",
+              ${lpAmt},
+              0,
+              0,
+              *a
+            ) |
+            for (@res <- a) { ret!(res) }
+          }
+        }
+      }`;
+    await deployWithWalletOrFallback(term);
+    showToast("Remove liquidity deploy submitted.", "success");
+    state.lpRemove = "";
+    await refreshOnchain();
+  } catch (e) {
+    showToast(e.message || "Remove liquidity failed", "error");
+  } finally {
+    state.loading = false;
+    render();
+  }
+}
+
+// ---- Render ----
+function render() {
+  const app = document.getElementById("root");
+  const outAmt = updateSwapOutput();
+  const impact = priceImpact(
+    toWei(state.swapIn.amount),
+    state.swapIn.tokenIdx === 0 ? state.pool.reserveA : state.pool.reserveB,
+    state.swapIn.tokenIdx === 0 ? state.pool.reserveB : state.pool.reserveA,
+  );
+  const priceAB = state.pool.reserveA > 0
+    ? (state.pool.reserveB / state.pool.reserveA).toFixed(4) : "—";
+  const priceBA = state.pool.reserveB > 0
+    ? (state.pool.reserveA / state.pool.reserveB).toFixed(4) : "—";
+  const tkIn  = TOKENS[state.swapIn.tokenIdx];
+  const tkOut = TOKENS[state.swapOut.tokenIdx];
+  const userLPShare = state.pool.lpSupply > 0
+    ? ((state.pool.userLP / state.pool.lpSupply) * 100).toFixed(2) : "0.00";
+  const userReserveA = state.pool.lpSupply > 0
+    ? (state.pool.userLP / state.pool.lpSupply) * state.pool.reserveA : 0;
+  const userReserveB = state.pool.lpSupply > 0
+    ? (state.pool.userLP / state.pool.lpSupply) * state.pool.reserveB : 0;
+
+  // Auto-fill token B when adding liquidity
+  let liqBCalc = state.liqB;
+  if (state.pool.reserveA > 0 && state.liqA) {
+    liqBCalc = fromWei((toWei(state.liqA) * state.pool.reserveB) / state.pool.reserveA);
+  }
+
+  app.innerHTML = `
+  <!-- Header -->
+  <header>
+    <div class="logo">ASI<span>·</span>DEX</div>
+    <div class="nav-tabs">
+      <button class="nav-tab ${state.tab==='swap'?'active':''}" onclick="setTab('swap')">Swap</button>
+      <button class="nav-tab ${state.tab==='liquidity'?'active':''}" onclick="setTab('liquidity')">Liquidity</button>
+      <button class="nav-tab ${state.tab==='pool'?'active':''}" onclick="setTab('pool')">Pool</button>
+    </div>
+    <div class="flex items-center gap-2">
+      <div class="network-badge">
+        <div class="network-dot"></div>
+        ASI DevNet
+      </div>
+      <button class="wallet-btn ${state.wallet?'connected':''}" onclick="connectWallet()">
+        ${state.wallet ? "● " + shortAddr(state.wallet) : "Connect Wallet"}
+      </button>
+      <button class="wallet-btn" onclick="openUriConfig()" style="border-color: var(--yellow); color: var(--yellow)">
+        Configure URIs
+      </button>
+    </div>
+  </header>
+
+  <main>
+    ${state.tab === 'swap' ? renderSwap(tkIn, tkOut, outAmt, impact, priceAB, priceBA) : ''}
+    ${state.tab === 'liquidity' ? renderLiquidity(liqBCalc, userLPShare, userReserveA, userReserveB) : ''}
+    ${state.tab === 'pool' ? renderPool(priceAB, priceBA) : ''}
+  </main>
+
+  ${state.toast ? `
+  <div class="toast ${state.toast.type}">
+    ${state.toast.type === 'info' ? '<span class="spinner"></span>' : ''}
+    ${state.toast.msg}
+  </div>` : ''}
+  `;
+}
+
+function renderSwap(tkIn, tkOut, outAmt, impact, priceAB, priceBA) {
+  const minOut = outAmt ? (parseFloat(outAmt) * (1 - state.slippage / 100)).toFixed(6) : "—";
+  const impactClass = impact > 5 ? 'red' : impact > 2 ? 'yellow' : 'green';
+
+  return `
+  <div class="two-col">
+    <div class="card">
+      <div class="card-title"><div class="dot"></div>Swap Tokens</div>
+
+      <!-- Token In -->
+      <div class="token-input-wrap">
+        <div class="token-input-label">You Pay</div>
+        <div class="token-input-row">
+          <input
+            class="token-amount-input"
+            type="number"
+            placeholder="0.0"
+            value="${state.swapIn.amount}"
+            oninput="setState('swapIn.amount', this.value)"
+          />
+          <div class="token-selector">
+            <div class="token-icon ${tkIn.cls}">${tkIn.symbol.slice(0,2)}</div>
+            ${tkIn.symbol}
+          </div>
+        </div>
+        <div class="token-balance">
+          Balance: <span onclick="setState('swapIn.amount', fromWei(state.balances[state.swapIn.tokenIdx]))">${fromWei(state.balances[state.swapIn.tokenIdx])}</span> ${tkIn.symbol}
+        </div>
+      </div>
+
+      <!-- Arrow -->
+      <div class="swap-arrow-wrap">
+        <button class="swap-arrow-btn" onclick="flipTokens()">⇅</button>
+      </div>
+
+      <!-- Token Out -->
+      <div class="token-input-wrap">
+        <div class="token-input-label">You Receive (estimated)</div>
+        <div class="token-input-row">
+          <input
+            class="token-amount-input"
+            type="number"
+            placeholder="0.0"
+            value="${outAmt || ''}"
+            readonly
+          />
+          <div class="token-selector">
+            <div class="token-icon ${tkOut.cls}">${tkOut.symbol.slice(0,2)}</div>
+            ${tkOut.symbol}
+          </div>
+        </div>
+        <div class="token-balance">
+          Balance: ${fromWei(state.balances[state.swapOut.tokenIdx])} ${tkOut.symbol}
+        </div>
+      </div>
+
+      <!-- Slippage -->
+      <div class="slippage-wrap">
+        <span class="slippage-label">Slippage:</span>
+        ${[0.1, 0.5, 1.0].map(s => `
+          <button class="slippage-btn ${state.slippage === s ? 'active' : ''}" onclick="setState('slippage', ${s})">${s}%</button>
+        `).join('')}
+        <input class="slippage-custom" type="number" placeholder="Custom" value="${![0.1,0.5,1.0].includes(state.slippage)?state.slippage:''}" oninput="setState('slippage', parseFloat(this.value)||0.5)" />
+      </div>
+
+      ${impact > 5 ? `<div class="impact-warning">⚠ High price impact: ${impact.toFixed(2)}%. Consider smaller trade size.</div>` : ''}
+
+      <button class="action-btn primary" onclick="doSwap()" ${state.loading || !state.swapIn.amount ? 'disabled' : ''}>
+        ${state.loading ? '<span class="spinner"></span>Swapping...' : `Swap ${tkIn.symbol} → ${tkOut.symbol}`}
+      </button>
+    </div>
+
+    <!-- Right panel: trade info -->
+    <div>
+      <div class="card">
+        <div class="card-title"><div class="dot"></div>Trade Details</div>
+        <div class="info-row">
+          <span class="label">Exchange Rate</span>
+          <span class="value">1 ${tkIn.symbol} = ${tkIn.symbol === 'TKNA' ? priceAB : priceBA} ${tkOut.symbol}</span>
+        </div>
+        <div class="info-row">
+          <span class="label">Price Impact</span>
+          <span class="value ${impactClass}">${outAmt ? impact.toFixed(2) + '%' : '—'}</span>
+        </div>
+        <div class="info-row">
+          <span class="label">Trading Fee</span>
+          <span class="value">0.30%</span>
+        </div>
+        <div class="info-row">
+          <span class="label">Minimum Received</span>
+          <span class="value">${minOut} ${tkOut.symbol}</span>
+        </div>
+        <div class="info-row">
+          <span class="label">Route</span>
+          <span class="value text-accent">${tkIn.symbol} → ${tkOut.symbol}</span>
+        </div>
+      </div>
+
+      <div class="card section-gap">
+        <div class="card-title"><div class="dot"></div>Pool Reserves</div>
+        <div class="price-bar">
+          <div class="price-bar-label">Token Ratio</div>
+          <div class="price-bar-track">
+            <div class="price-bar-fill" style="width:${state.pool.reserveA > 0 ? (state.pool.reserveA / (state.pool.reserveA + state.pool.reserveB) * 100).toFixed(1) : 50}%"></div>
+          </div>
+          <div class="price-bar-labels">
+            <span>TKNA</span>
+            <span>TKNB</span>
+          </div>
+        </div>
+        <div class="info-row">
+          <span class="label">TKNA Reserve</span>
+          <span class="value">${fromWei(state.pool.reserveA)}</span>
+        </div>
+        <div class="info-row">
+          <span class="label">TKNB Reserve</span>
+          <span class="value">${fromWei(state.pool.reserveB)}</span>
+        </div>
+      </div>
+    </div>
+  </div>
+  `;
+}
+
+function renderLiquidity(liqBCalc, userLPShare, userReserveA, userReserveB) {
+  return `
+  <div class="two-col">
+    <div class="card">
+      <div class="inner-tabs">
+        <button class="inner-tab ${state.liquidityTab==='add'?'active':''}" onclick="setState('liquidityTab','add')">Add Liquidity</button>
+        <button class="inner-tab ${state.liquidityTab==='remove'?'active':''}" onclick="setState('liquidityTab','remove')">Remove Liquidity</button>
+      </div>
+
+      ${state.liquidityTab === 'add' ? `
+        <div class="token-input-wrap">
+          <div class="token-input-label">Token A (TKNA)</div>
+          <div class="token-input-row">
+            <input class="token-amount-input" type="number" placeholder="0.0" value="${state.liqA}" oninput="setState('liqA', this.value)" />
+            <div class="token-selector">
+              <div class="token-icon a">TK</div> TKNA
+            </div>
+          </div>
+          <div class="token-balance">Balance: <span>${fromWei(state.balances[0])}</span> TKNA</div>
+        </div>
+
+        <div class="swap-arrow-wrap" style="pointer-events:none">
+          <div class="swap-arrow-btn" style="cursor:default; color: var(--muted)">+</div>
+        </div>
+
+        <div class="token-input-wrap">
+          <div class="token-input-label">Token B (TKNB) ${state.pool.reserveA > 0 ? "— auto-calculated" : ""}</div>
+          <div class="token-input-row">
+            <input class="token-amount-input" type="number" placeholder="0.0" value="${liqBCalc}" ${state.pool.reserveA > 0 ? "readonly style=\"opacity:0.7\"" : "oninput=\"setState('liqB', this.value)\""} />
+            <div class="token-selector">
+              <div class="token-icon b">TK</div> TKNB
+            </div>
+          </div>
+          <div class="token-balance">Balance: <span>${fromWei(state.balances[1])}</span> TKNB</div>
+        </div>
+
+        <div class="mt-3">
+          <div class="info-row">
+            <span class="label">Pool Share (estimated)</span>
+            <span class="value">${state.liqA && state.pool.reserveA > 0 ? ((toWei(state.liqA) / (state.pool.reserveA + toWei(state.liqA))) * 100).toFixed(3) : '—'}%</span>
+          </div>
+          <div class="info-row">
+            <span class="label">Current Rate</span>
+            <span class="value">1 TKNA = ${state.pool.reserveA > 0 ? (state.pool.reserveB / state.pool.reserveA).toFixed(4) : '—'} TKNB</span>
+          </div>
+        </div>
+
+        <button class="action-btn primary" onclick="doAddLiquidity()" ${state.loading || !state.liqA ? 'disabled' : ''}>
+          ${state.loading ? '<span class="spinner"></span>Processing...' : 'Add Liquidity & Mint LP Tokens'}
+        </button>
+      ` : `
+        <div class="token-input-wrap">
+          <div class="token-input-label">LP Tokens to Burn</div>
+          <div class="token-input-row">
+            <input class="token-amount-input" type="number" placeholder="0.0" value="${state.lpRemove}" oninput="setState('lpRemove', this.value)" />
+            <div class="token-selector" style="white-space:nowrap">
+              <span style="font-size:0.75rem">🔥</span> LP
+            </div>
+          </div>
+          <div class="token-balance">
+            Your LP: <span onclick="setState('lpRemove', fromWei(state.pool.userLP))">${fromWei(state.pool.userLP)}</span>
+          </div>
+        </div>
+
+        ${state.lpRemove ? `
+        <div class="mt-3">
+          <div class="info-row">
+            <span class="label">You Receive TKNA</span>
+            <span class="value text-green">${(parseFloat(state.lpRemove) / fromWei(state.pool.lpSupply) * fromWei(state.pool.reserveA)).toFixed(4)} TKNA</span>
+          </div>
+          <div class="info-row">
+            <span class="label">You Receive TKNB</span>
+            <span class="value text-green">${(parseFloat(state.lpRemove) / fromWei(state.pool.lpSupply) * fromWei(state.pool.reserveB)).toFixed(4)} TKNB</span>
+          </div>
+          <div class="info-row">
+            <span class="label">Pool Share Removed</span>
+            <span class="value">${(parseFloat(state.lpRemove) / fromWei(state.pool.lpSupply) * 100).toFixed(3)}%</span>
+          </div>
+        </div>` : ''}
+
+        <button class="action-btn primary" onclick="doRemoveLiquidity()" ${state.loading || !state.lpRemove ? 'disabled' : ''} style="background: linear-gradient(135deg, #ff4458, #e040fb)">
+          ${state.loading ? '<span class="spinner"></span>Processing...' : 'Remove Liquidity & Burn LP'}
+        </button>
+      `}
+    </div>
+
+    <!-- Right: your position -->
+    <div>
+      <div class="card">
+        <div class="card-title"><div class="dot"></div>Your Position</div>
+        ${state.wallet ? `
+          <div class="lp-position">
+            <div class="lp-position-title">TKNA / TKNB Pool</div>
+            <div class="info-row">
+              <span class="label">LP Tokens</span>
+              <span class="value text-accent">${fromWei(state.pool.userLP)}</span>
+            </div>
+            <div class="info-row">
+              <span class="label">Pool Share</span>
+              <span class="value">${userLPShare}%</span>
+            </div>
+            <div class="info-row">
+              <span class="label">TKNA Deposited</span>
+              <span class="value">${fromWei(userReserveA)}</span>
+            </div>
+            <div class="info-row">
+              <span class="label">TKNB Deposited</span>
+              <span class="value">${fromWei(userReserveB)}</span>
+            </div>
+          </div>
+        ` : `
+          <div style="text-align:center; padding: 30px; color: var(--muted); font-size:0.85rem;">
+            Connect your wallet to see your position
+          </div>
+        `}
+      </div>
+    </div>
+  </div>
+  `;
+}
+
+function renderPool(priceAB, priceBA) {
+  return `
+  <div>
+    <div class="card mb-2">
+      <div class="card-title"><div class="dot"></div>TKNA / TKNB Pool Statistics</div>
+      <div class="stat-grid">
+        <div class="stat-box">
+          <div class="stat-label">TKNA Reserve</div>
+          <div class="stat-value">${(fromWei(state.pool.reserveA)/1000).toFixed(2)}K</div>
+          <div class="stat-sub">Token A</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-label">TKNB Reserve</div>
+          <div class="stat-value">${(fromWei(state.pool.reserveB)/1000).toFixed(2)}K</div>
+          <div class="stat-sub">Token B</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-label">LP Supply</div>
+          <div class="stat-value">${(fromWei(state.pool.lpSupply)/1000).toFixed(2)}K</div>
+          <div class="stat-sub">LP Tokens</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-label">Trading Fee</div>
+          <div class="stat-value">0.30%</div>
+          <div class="stat-sub">Per Swap</div>
+        </div>
+      </div>
+
+      <div class="price-bar">
+        <div class="price-bar-label">Reserve Composition</div>
+        <div class="price-bar-track">
+          <div class="price-bar-fill" style="width:${state.pool.reserveA > 0 ? (state.pool.reserveA/(state.pool.reserveA+state.pool.reserveB)*100).toFixed(1) : 50}%"></div>
+        </div>
+        <div class="price-bar-labels">
+          <span>TKNA (${state.pool.reserveA > 0 ? (state.pool.reserveA/(state.pool.reserveA+state.pool.reserveB)*100).toFixed(1) : 50}%)</span>
+          <span>TKNB (${state.pool.reserveB > 0 ? (state.pool.reserveB/(state.pool.reserveA+state.pool.reserveB)*100).toFixed(1) : 50}%)</span>
+        </div>
+      </div>
+
+      <hr class="divider" />
+      <div class="card-title"><div class="dot"></div>Prices</div>
+      <div class="info-row">
+        <span class="label">1 TKNA</span>
+        <span class="value text-accent">${priceAB} TKNB</span>
+      </div>
+      <div class="info-row">
+        <span class="label">1 TKNB</span>
+        <span class="value text-accent">${priceBA} TKNA</span>
+      </div>
+    </div>
+
+    <div class="card section-gap">
+      <div class="card-title"><div class="dot"></div>AMM Formula</div>
+      <div style="padding: 14px; background: var(--panel); border-radius: 10px; font-family: 'Space Mono', monospace; font-size: 0.78rem; color: var(--muted); line-height: 1.8">
+        <div style="color:var(--accent); margin-bottom:8px;">x · y = k (constant product)</div>
+        <div>amountOut = (amountIn × 997 × reserveOut)</div>
+        <div>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;÷ (reserveIn × 1000 + amountIn × 997)</div>
+        <div style="margin-top:8px; color: var(--green);">k = ${state.pool.reserveA > 0 ? (fromWei(state.pool.reserveA) * fromWei(state.pool.reserveB)).toExponential(3) : '—'}</div>
+      </div>
+    </div>
+  </div>
+  `;
+}
+
+// ---- Global helpers accessible from inline onclick ----
+window.setTab        = (t) => { state.tab = t; render(); };
+window.setState      = (path, val) => {
+  const parts = path.split('.');
+  let obj = state;
+  for (let i = 0; i < parts.length - 1; i++) obj = obj[parts[i]];
+  obj[parts[parts.length - 1]] = val;
+  render();
+};
+window.flipTokens    = () => {
+  [state.swapIn.tokenIdx, state.swapOut.tokenIdx] = [state.swapOut.tokenIdx, state.swapIn.tokenIdx];
+  state.swapIn.amount = "";
+  render();
+};
+window.connectWallet = connectWallet;
+window.openUriConfig = openUriConfig;
+window.doSwap           = doSwap;
+window.doAddLiquidity   = doAddLiquidity;
+window.doRemoveLiquidity = doRemoveLiquidity;
+window.fromWei          = fromWei;
+window.state            = state;
+
+// ---- Boot ----
+(async () => {
+  await refreshOnchain();
+  if (!hasConfiguredUris()) {
+    showToast("Configure contract URIs to query live Devnet data.", "info");
+    setTimeout(() => {
+      if (confirm("No contract URIs configured yet. Configure now?")) openUriConfig();
+    }, 300);
+  }
+  render();
+})();
+</script>
+</body>
+</html>
+

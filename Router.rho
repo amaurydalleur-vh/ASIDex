@@ -1,0 +1,177 @@
+// ============================================================
+//  ASI-DEX: Router Contract
+//
+//  User-facing contract. Resolves pairs via Factory,
+//  handles slippage checks, and delegates to Pair.
+//
+//  SETUP: Replace FACTORY_URI with your deployed Factory URI.
+//
+//  Registry keys exported:
+//    router!("swapExactTokensForTokens",
+//              caller, amountIn, minAmountOut,
+//              tokenInUri, tokenOutUri, to, return)
+//
+//    router!("addLiquidity",
+//              provider, tokenAUri, tokenBUri,
+//              amtA, amtB, minLP, return)
+//
+//    router!("removeLiquidity",
+//              provider, tokenAUri, tokenBUri,
+//              lpAmount, minA, minB, return)
+//
+//    router!("getAmountOut",
+//              amountIn, tokenInUri, tokenOutUri, return)
+//              -> (success, amountOut, message)
+//
+//    router!("getPair", tokenAUri, tokenBUri, return)
+//              -> pairUri | Nil
+// ============================================================
+
+new
+  routerContract,
+  factoryCh,
+  insertArbitrary(`rho:registry:insertArbitrary`),
+  lookup(`rho:registry:lookup`),
+  uriOut,
+  stdout(`rho:io:stdout`)
+in {
+
+  // ---- Lookup factory ----
+  // !! Replace FACTORY_URI with your deployed Factory URI !!
+  lookup!(`FACTORY_URI`, *factoryCh) |
+
+  // ---- Helper: resolve pair from factory ----
+  new _getPair in {
+    contract _getPair(@tokenAUri, @tokenBUri, return) = {
+      for (factory <- factoryCh) {
+        factoryCh!(*factory) |
+        new pairUriCh in {
+          factory!("getPair", tokenAUri, tokenBUri, *pairUriCh) |
+          for (@pairUri <- pairUriCh) {
+            match pairUri {
+              Nil => return!((false, Nil, "Pair does not exist"))
+              uri => return!((true, uri, "OK"))
+            }
+          }
+        }
+      }
+    } |
+
+    // ---- getPair (public) ----
+    contract routerContract(@"getPair", @tokenAUri, @tokenBUri, return) = {
+      new resCh in {
+        _getPair!(tokenAUri, tokenBUri, *resCh) |
+        for (@res <- resCh) { return!(res) }
+      }
+    } |
+
+    // ---- getAmountOut ----
+    contract routerContract(@"getAmountOut", @amountIn, @tokenInUri, @tokenOutUri, return) = {
+      new resCh in {
+        _getPair!(tokenInUri, tokenOutUri, *resCh) |
+        for (@res <- resCh) {
+          match res {
+            (false, _, msg) => return!((false, 0, msg))
+            (true, pairUri, _) => {
+              new pairCh, calcCh in {
+                lookup!(pairUri, *pairCh) |
+                for (pair <- pairCh) {
+                  pair!("getAmountOut", amountIn, tokenInUri, *calcCh) |
+                  for (@calc <- calcCh) { return!(calc) }
+                }
+              }
+            }
+          }
+        }
+      }
+    } |
+
+    // ---- swapExactTokensForTokens ----
+    contract routerContract(
+      @"swapExactTokensForTokens",
+      @caller, @amountIn, @minAmountOut,
+      @tokenInUri, @tokenOutUri, @to,
+      return
+    ) = {
+      new resCh in {
+        _getPair!(tokenInUri, tokenOutUri, *resCh) |
+        for (@res <- resCh) {
+          match res {
+            (false, _, msg) => return!((false, 0, msg))
+            (true, pairUri, _) => {
+              new pairCh, swapCh in {
+                lookup!(pairUri, *pairCh) |
+                for (pair <- pairCh) {
+                  pair!("swap", caller, amountIn, tokenInUri, minAmountOut, to, *swapCh) |
+                  for (@swapRes <- swapCh) { return!(swapRes) }
+                }
+              }
+            }
+          }
+        }
+      }
+    } |
+
+    // ---- addLiquidity ----
+    contract routerContract(
+      @"addLiquidity",
+      @provider, @tokenAUri, @tokenBUri,
+      @amtA, @amtB, @minLP,
+      return
+    ) = {
+      new resCh in {
+        _getPair!(tokenAUri, tokenBUri, *resCh) |
+        for (@res <- resCh) {
+          match res {
+            (false, _, msg) => return!((false, 0, msg))
+            (true, pairUri, _) => {
+              new pairCh, liqCh in {
+                lookup!(pairUri, *pairCh) |
+                for (pair <- pairCh) {
+                  pair!("addLiquidity", provider, amtA, amtB, minLP, *liqCh) |
+                  for (@liqRes <- liqCh) { return!(liqRes) }
+                }
+              }
+            }
+          }
+        }
+      }
+    } |
+
+    // ---- removeLiquidity ----
+    contract routerContract(
+      @"removeLiquidity",
+      @provider, @tokenAUri, @tokenBUri,
+      @lpAmount, @minA, @minB,
+      return
+    ) = {
+      new resCh in {
+        _getPair!(tokenAUri, tokenBUri, *resCh) |
+        for (@res <- resCh) {
+          match res {
+            (false, _, msg) => return!((false, 0, msg))
+            (true, pairUri, _) => {
+              new pairCh, remCh in {
+                lookup!(pairUri, *pairCh) |
+                for (pair <- pairCh) {
+                  pair!("removeLiquidity", provider, lpAmount, minA, minB, *remCh) |
+                  for (@remRes <- remCh) { return!(remRes) }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+
+  } // end _getPair block
+
+  |
+
+  // ---- Register and print URI ----
+  insertArbitrary!(*routerContract, *uriOut) |
+  for (@uri <- uriOut) {
+    stdout!(["Router deployed at URI:", uri])
+    // This is the URI your UI calls for all user operations!
+  }
+}
