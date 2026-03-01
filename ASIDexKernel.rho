@@ -1,13 +1,13 @@
 // ASIDex Kernel (no URI workflow)
 // Deploy once. Contracts are exposed on public named channels.
 //
-// Replace ASIDEX_NS with your namespace slug (example: amaury-v1).
+// Replace amaury-v1 with your namespace slug (example: amaury-v1).
 //
 // Channels created:
-//   @"asidex:tokenA:ASIDEX_NS"
-//   @"asidex:tokenB:ASIDEX_NS"
-//   @"asidex:pair:ASIDEX_NS"
-//   @"asidex:router:ASIDEX_NS"
+//   @"asidex:tokenA:amaury-v1"
+//   @"asidex:tokenB:amaury-v1"
+//   @"asidex:pair:amaury-v1"
+//   @"asidex:router:amaury-v1"
 
 new
   stdout(`rho:io:stdout`),
@@ -53,20 +53,20 @@ in {
       }
     } |
 
-    contract @"asidex:tokenA:ASIDEX_NS"(@"name", return) = { return!("ASI-DEX Token A") } |
-    contract @"asidex:tokenA:ASIDEX_NS"(@"symbol", return) = { return!("TKNA") } |
-    contract @"asidex:tokenA:ASIDEX_NS"(@"decimals", return) = { return!(18) } |
-    contract @"asidex:tokenA:ASIDEX_NS"(@"totalSupply", return) = { for (@s <- supplyA) { supplyA!(s) | return!(s) } } |
-    contract @"asidex:tokenA:ASIDEX_NS"(@"balanceOf", @addr, return) = { for (@m <- balA) { balA!(m) | match m.get(addr) { Nil => return!(0) v => return!(v) } } } |
-    contract @"asidex:tokenA:ASIDEX_NS"(@"allowance", @owner, @spender, return) = { for (@m <- allowA) { allowA!(m) | match m.get((owner, spender)) { Nil => return!(0) v => return!(v) } } } |
-    contract @"asidex:tokenA:ASIDEX_NS"(@"approve", @caller, @spender, @amount, return) = {
+    contract @"asidex:tokenA:amaury-v1"(@"name", return) = { return!("ASI-DEX Token A") } |
+    contract @"asidex:tokenA:amaury-v1"(@"symbol", return) = { return!("TKNA") } |
+    contract @"asidex:tokenA:amaury-v1"(@"decimals", return) = { return!(18) } |
+    contract @"asidex:tokenA:amaury-v1"(@"totalSupply", return) = { for (@s <- supplyA) { supplyA!(s) | return!(s) } } |
+    contract @"asidex:tokenA:amaury-v1"(@"balanceOf", @addr, return) = { for (@m <- balA) { balA!(m) | match m.get(addr) { Nil => return!(0) v => return!(v) } } } |
+    contract @"asidex:tokenA:amaury-v1"(@"allowance", @owner, @spender, return) = { for (@m <- allowA) { allowA!(m) | match m.get((owner, spender)) { Nil => return!(0) v => return!(v) } } } |
+    contract @"asidex:tokenA:amaury-v1"(@"approve", @caller, @spender, @amount, return) = {
       if (amount < 0) { return!((false, "Invalid amount")) }
       else { for (@m <- allowA) { allowA!(m.set((caller, spender), amount)) | return!((true, "Approved")) } }
     } |
-    contract @"asidex:tokenA:ASIDEX_NS"(@"transfer", @caller, @to, @amount, return) = {
+    contract @"asidex:tokenA:amaury-v1"(@"transfer", @caller, @to, @amount, return) = {
       new tx in { _transferA!(caller, to, amount, *tx) | for (@r <- tx) { return!(r) } }
     } |
-    contract @"asidex:tokenA:ASIDEX_NS"(@"transferFrom", @caller, @from, @to, @amount, return) = {
+    contract @"asidex:tokenA:amaury-v1"(@"transferFrom", @caller, @from, @to, @amount, return) = {
       if (caller == from) {
         new tx in { _transferA!(from, to, amount, *tx) | for (@r <- tx) { return!(r) } }
       } else {
@@ -91,7 +91,7 @@ in {
         }
       }
     } |
-    contract @"asidex:tokenA:ASIDEX_NS"(@"mint", @to, @amount, adminKey, return) = {
+    contract @"asidex:tokenA:amaury-v1"(@"mint", @to, @amount, adminKey, return) = {
       for (@k <- adminKey) {
         for (@cap <- adminCap) {
           if (k != cap) { adminCap!(cap) | return!((false, "Unauthorized")) }
@@ -134,20 +134,20 @@ in {
       }
     } |
 
-    contract @"asidex:tokenB:ASIDEX_NS"(@"name", return) = { return!("ASI-DEX Token B") } |
-    contract @"asidex:tokenB:ASIDEX_NS"(@"symbol", return) = { return!("TKNB") } |
-    contract @"asidex:tokenB:ASIDEX_NS"(@"decimals", return) = { return!(18) } |
-    contract @"asidex:tokenB:ASIDEX_NS"(@"totalSupply", return) = { for (@s <- supplyB) { supplyB!(s) | return!(s) } } |
-    contract @"asidex:tokenB:ASIDEX_NS"(@"balanceOf", @addr, return) = { for (@m <- balB) { balB!(m) | match m.get(addr) { Nil => return!(0) v => return!(v) } } } |
-    contract @"asidex:tokenB:ASIDEX_NS"(@"allowance", @owner, @spender, return) = { for (@m <- allowB) { allowB!(m) | match m.get((owner, spender)) { Nil => return!(0) v => return!(v) } } } |
-    contract @"asidex:tokenB:ASIDEX_NS"(@"approve", @caller, @spender, @amount, return) = {
+    contract @"asidex:tokenB:amaury-v1"(@"name", return) = { return!("ASI-DEX Token B") } |
+    contract @"asidex:tokenB:amaury-v1"(@"symbol", return) = { return!("TKNB") } |
+    contract @"asidex:tokenB:amaury-v1"(@"decimals", return) = { return!(18) } |
+    contract @"asidex:tokenB:amaury-v1"(@"totalSupply", return) = { for (@s <- supplyB) { supplyB!(s) | return!(s) } } |
+    contract @"asidex:tokenB:amaury-v1"(@"balanceOf", @addr, return) = { for (@m <- balB) { balB!(m) | match m.get(addr) { Nil => return!(0) v => return!(v) } } } |
+    contract @"asidex:tokenB:amaury-v1"(@"allowance", @owner, @spender, return) = { for (@m <- allowB) { allowB!(m) | match m.get((owner, spender)) { Nil => return!(0) v => return!(v) } } } |
+    contract @"asidex:tokenB:amaury-v1"(@"approve", @caller, @spender, @amount, return) = {
       if (amount < 0) { return!((false, "Invalid amount")) }
       else { for (@m <- allowB) { allowB!(m.set((caller, spender), amount)) | return!((true, "Approved")) } }
     } |
-    contract @"asidex:tokenB:ASIDEX_NS"(@"transfer", @caller, @to, @amount, return) = {
+    contract @"asidex:tokenB:amaury-v1"(@"transfer", @caller, @to, @amount, return) = {
       new tx in { _transferB!(caller, to, amount, *tx) | for (@r <- tx) { return!(r) } }
     } |
-    contract @"asidex:tokenB:ASIDEX_NS"(@"transferFrom", @caller, @from, @to, @amount, return) = {
+    contract @"asidex:tokenB:amaury-v1"(@"transferFrom", @caller, @from, @to, @amount, return) = {
       if (caller == from) {
         new tx in { _transferB!(from, to, amount, *tx) | for (@r <- tx) { return!(r) } }
       } else {
@@ -172,7 +172,7 @@ in {
         }
       }
     } |
-    contract @"asidex:tokenB:ASIDEX_NS"(@"mint", @to, @amount, adminKey, return) = {
+    contract @"asidex:tokenB:amaury-v1"(@"mint", @to, @amount, adminKey, return) = {
       for (@k <- adminKey) {
         for (@cap <- adminCap) {
           if (k != cap) { adminCap!(cap) | return!((false, "Unauthorized")) }
@@ -195,15 +195,15 @@ in {
   } |
 
   // ------------------ pair ------------------
-  contract @"asidex:pair:ASIDEX_NS"(@"getPoolSpender", return) = { return!("asidex:pair:ASIDEX_NS") } |
-  contract @"asidex:pair:ASIDEX_NS"(@"getReserves", return) = {
+  contract @"asidex:pair:amaury-v1"(@"getPoolSpender", return) = { return!("asidex:pair:amaury-v1") } |
+  contract @"asidex:pair:amaury-v1"(@"getReserves", return) = {
     for (@rA <- reserveACh) { for (@rB <- reserveBCh) { reserveACh!(rA) | reserveBCh!(rB) | return!((rA, rB)) } }
   } |
-  contract @"asidex:pair:ASIDEX_NS"(@"getLPSupply", return) = { for (@s <- lpSupplyCh) { lpSupplyCh!(s) | return!(s) } } |
-  contract @"asidex:pair:ASIDEX_NS"(@"getLPBalance", @addr, return) = {
+  contract @"asidex:pair:amaury-v1"(@"getLPSupply", return) = { for (@s <- lpSupplyCh) { lpSupplyCh!(s) | return!(s) } } |
+  contract @"asidex:pair:amaury-v1"(@"getLPBalance", @addr, return) = {
     for (@m <- lpBalances) { lpBalances!(m) | match m.get(addr) { Nil => return!(0) v => return!(v) } }
   } |
-  contract @"asidex:pair:ASIDEX_NS"(@"getAmountOut", @amountIn, @tokenIn, return) = {
+  contract @"asidex:pair:amaury-v1"(@"getAmountOut", @amountIn, @tokenIn, return) = {
     for (@rA <- reserveACh) {
       for (@rB <- reserveBCh) {
         reserveACh!(rA) | reserveBCh!(rB) |
@@ -218,7 +218,7 @@ in {
       }
     }
   } |
-  contract @"asidex:pair:ASIDEX_NS"(@"addLiquidity", @provider, @amtA, @amtB, @minLP, return) = {
+  contract @"asidex:pair:amaury-v1"(@"addLiquidity", @provider, @amtA, @amtB, @minLP, return) = {
     if (amtA <= 0 or amtB <= 0) { return!((false, "Invalid amounts")) }
     else {
       for (@rA <- reserveACh) {
@@ -241,7 +241,7 @@ in {
                   return!((false, "LP below minimum"))
                 } else {
                   new txA, txB in {
-                    @"asidex:tokenA:ASIDEX_NS"!("transferFrom", "asidex:pair:ASIDEX_NS", provider, "asidex:pair:ASIDEX_NS", amtA, *txA) |
+                    @"asidex:tokenA:amaury-v1"!("transferFrom", "asidex:pair:amaury-v1", provider, "asidex:pair:amaury-v1", amtA, *txA) |
                     for (@ra <- txA) {
                       match ra {
                         (false, msg) => {
@@ -249,7 +249,7 @@ in {
                           return!((false, msg))
                         }
                         (true, _) => {
-                          @"asidex:tokenB:ASIDEX_NS"!("transferFrom", "asidex:pair:ASIDEX_NS", provider, "asidex:pair:ASIDEX_NS", amtB, *txB) |
+                          @"asidex:tokenB:amaury-v1"!("transferFrom", "asidex:pair:amaury-v1", provider, "asidex:pair:amaury-v1", amtB, *txB) |
                           for (@rb <- txB) {
                             match rb {
                               (false, msg) => {
@@ -277,7 +277,7 @@ in {
       }
     }
   } |
-  contract @"asidex:pair:ASIDEX_NS"(@"removeLiquidity", @provider, @lpAmount, @minA, @minB, return) = {
+  contract @"asidex:pair:amaury-v1"(@"removeLiquidity", @provider, @lpAmount, @minA, @minB, return) = {
     if (lpAmount <= 0) { return!((false, "Invalid LP amount")) }
     else {
       for (@rA <- reserveACh) {
@@ -299,12 +299,12 @@ in {
                             reserveACh!(rA) | reserveBCh!(rB) | lpSupplyCh!(supply) | lpBalances!(lpMap) | return!((false, "Slippage"))
                           } else {
                             new txA, txB in {
-                              @"asidex:tokenA:ASIDEX_NS"!("transfer", "asidex:pair:ASIDEX_NS", provider, a, *txA) |
+                              @"asidex:tokenA:amaury-v1"!("transfer", "asidex:pair:amaury-v1", provider, a, *txA) |
                               for (@ra <- txA) {
                                 match ra {
                                   (false, msg) => { reserveACh!(rA) | reserveBCh!(rB) | lpSupplyCh!(supply) | lpBalances!(lpMap) | return!((false, msg)) }
                                   (true, _) => {
-                                    @"asidex:tokenB:ASIDEX_NS"!("transfer", "asidex:pair:ASIDEX_NS", provider, b, *txB) |
+                                    @"asidex:tokenB:amaury-v1"!("transfer", "asidex:pair:amaury-v1", provider, b, *txB) |
                                     for (@rb <- txB) {
                                       match rb {
                                         (false, msg) => { reserveACh!(rA) | reserveBCh!(rB) | lpSupplyCh!(supply) | lpBalances!(lpMap) | return!((false, msg)) }
@@ -333,7 +333,7 @@ in {
       }
     }
   } |
-  contract @"asidex:pair:ASIDEX_NS"(@"swap", @trader, @amountIn, @tokenIn, @minOut, @to, return) = {
+  contract @"asidex:pair:amaury-v1"(@"swap", @trader, @amountIn, @tokenIn, @minOut, @to, return) = {
     if (amountIn <= 0) { return!((false, 0, "Invalid input")) }
     else {
       for (@rA <- reserveACh) {
@@ -354,18 +354,18 @@ in {
               } else {
                 new txIn, txOut in {
                   if (tokenIn == "A") {
-                    @"asidex:tokenA:ASIDEX_NS"!("transferFrom", "asidex:pair:ASIDEX_NS", trader, "asidex:pair:ASIDEX_NS", amountIn, *txIn)
+                    @"asidex:tokenA:amaury-v1"!("transferFrom", "asidex:pair:amaury-v1", trader, "asidex:pair:amaury-v1", amountIn, *txIn)
                   } else {
-                    @"asidex:tokenB:ASIDEX_NS"!("transferFrom", "asidex:pair:ASIDEX_NS", trader, "asidex:pair:ASIDEX_NS", amountIn, *txIn)
+                    @"asidex:tokenB:amaury-v1"!("transferFrom", "asidex:pair:amaury-v1", trader, "asidex:pair:amaury-v1", amountIn, *txIn)
                   } |
                   for (@rin <- txIn) {
                     match rin {
                       (false, msg) => { reserveACh!(rA) | reserveBCh!(rB) | return!((false, 0, msg)) }
                       (true, _) => {
                         if (tokenIn == "A") {
-                          @"asidex:tokenB:ASIDEX_NS"!("transfer", "asidex:pair:ASIDEX_NS", to, amountOut, *txOut)
+                          @"asidex:tokenB:amaury-v1"!("transfer", "asidex:pair:amaury-v1", to, amountOut, *txOut)
                         } else {
-                          @"asidex:tokenA:ASIDEX_NS"!("transfer", "asidex:pair:ASIDEX_NS", to, amountOut, *txOut)
+                          @"asidex:tokenA:amaury-v1"!("transfer", "asidex:pair:amaury-v1", to, amountOut, *txOut)
                         } |
                         for (@rout <- txOut) {
                           match rout {
@@ -392,30 +392,31 @@ in {
   } |
 
   // ------------------ router ------------------
-  contract @"asidex:router:ASIDEX_NS"(@"getAmountOut", @amountIn, @tokenIn, @tokenOut, return) = {
+  contract @"asidex:router:amaury-v1"(@"getAmountOut", @amountIn, @tokenIn, @tokenOut, return) = {
     if (tokenIn == tokenOut) { return!((false, 0, "tokenIn == tokenOut")) }
     else {
-      if (tokenIn == "A" and tokenOut == "B") { @"asidex:pair:ASIDEX_NS"!("getAmountOut", amountIn, "A", *return) }
+      if (tokenIn == "A" and tokenOut == "B") { @"asidex:pair:amaury-v1"!("getAmountOut", amountIn, "A", *return) }
       else {
-        if (tokenIn == "B" and tokenOut == "A") { @"asidex:pair:ASIDEX_NS"!("getAmountOut", amountIn, "B", *return) }
+        if (tokenIn == "B" and tokenOut == "A") { @"asidex:pair:amaury-v1"!("getAmountOut", amountIn, "B", *return) }
         else { return!((false, 0, "Unsupported route")) }
       }
     }
   } |
-  contract @"asidex:router:ASIDEX_NS"(@"swapExactTokensForTokens", @caller, @amountIn, @minAmountOut, @tokenIn, @tokenOut, @to, return) = {
-    if (tokenIn == "A" and tokenOut == "B") { @"asidex:pair:ASIDEX_NS"!("swap", caller, amountIn, "A", minAmountOut, to, *return) }
+  contract @"asidex:router:amaury-v1"(@"swapExactTokensForTokens", @caller, @amountIn, @minAmountOut, @tokenIn, @tokenOut, @to, return) = {
+    if (tokenIn == "A" and tokenOut == "B") { @"asidex:pair:amaury-v1"!("swap", caller, amountIn, "A", minAmountOut, to, *return) }
     else {
-      if (tokenIn == "B" and tokenOut == "A") { @"asidex:pair:ASIDEX_NS"!("swap", caller, amountIn, "B", minAmountOut, to, *return) }
+      if (tokenIn == "B" and tokenOut == "A") { @"asidex:pair:amaury-v1"!("swap", caller, amountIn, "B", minAmountOut, to, *return) }
       else { return!((false, 0, "Unsupported route")) }
     }
   } |
-  contract @"asidex:router:ASIDEX_NS"(@"addLiquidity", @provider, @amtA, @amtB, @minLP, return) = {
-    @"asidex:pair:ASIDEX_NS"!("addLiquidity", provider, amtA, amtB, minLP, *return)
+  contract @"asidex:router:amaury-v1"(@"addLiquidity", @provider, @amtA, @amtB, @minLP, return) = {
+    @"asidex:pair:amaury-v1"!("addLiquidity", provider, amtA, amtB, minLP, *return)
   } |
-  contract @"asidex:router:ASIDEX_NS"(@"removeLiquidity", @provider, @lpAmount, @minA, @minB, return) = {
-    @"asidex:pair:ASIDEX_NS"!("removeLiquidity", provider, lpAmount, minA, minB, *return)
+  contract @"asidex:router:amaury-v1"(@"removeLiquidity", @provider, @lpAmount, @minA, @minB, return) = {
+    @"asidex:pair:amaury-v1"!("removeLiquidity", provider, lpAmount, minA, minB, *return)
   } |
 
-  stdout!(["ASIDex kernel live on namespace", "ASIDEX_NS"])
+  stdout!(["ASIDex kernel live on namespace", "amaury-v1"])
 }
+
 
