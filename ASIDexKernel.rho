@@ -233,35 +233,35 @@ in {
                     lpA!(amtA * supply / rA) | lpB!(amtB * supply / rB) |
                     for (@a <- lpA) { for (@b <- lpB) { if (a <= b) { lpCh!(a) } else { lpCh!(b) } } }
                   }
-                }
-              } |
-              for (@lp <- lpCh) {
-                if (lp < minLP or lp <= 0) {
-                  reserveACh!(rA) | reserveBCh!(rB) | lpSupplyCh!(supply) | lpBalances!(lpMap) |
-                  return!((false, "LP below minimum"))
-                } else {
-                  new txA, txB in {
-                    @"asidex:tokenA:amaury-v1"!("transferFrom", "asidex:pair:amaury-v1", provider, "asidex:pair:amaury-v1", amtA, *txA) |
-                    for (@ra <- txA) {
-                      match ra {
-                        (false, msg) => {
-                          reserveACh!(rA) | reserveBCh!(rB) | lpSupplyCh!(supply) | lpBalances!(lpMap) |
-                          return!((false, msg))
-                        }
-                        (true, _) => {
-                          @"asidex:tokenB:amaury-v1"!("transferFrom", "asidex:pair:amaury-v1", provider, "asidex:pair:amaury-v1", amtB, *txB) |
-                          for (@rb <- txB) {
-                            match rb {
-                              (false, msg) => {
-                                reserveACh!(rA) | reserveBCh!(rB) | lpSupplyCh!(supply) | lpBalances!(lpMap) |
-                                return!((false, msg))
-                              }
-                              (true, _) => {
-                                reserveACh!(rA + amtA) |
-                                reserveBCh!(rB + amtB) |
-                                lpSupplyCh!(supply + lp) |
-                                lpBalances!(lpMap.set(provider, match lpMap.get(provider) { Nil => lp v => v + lp })) |
-                                return!((true, lp, "Liquidity added"))
+                } |
+                for (@lp <- lpCh) {
+                  if (lp < minLP or lp <= 0) {
+                    reserveACh!(rA) | reserveBCh!(rB) | lpSupplyCh!(supply) | lpBalances!(lpMap) |
+                    return!((false, "LP below minimum"))
+                  } else {
+                    new txA, txB in {
+                      @"asidex:tokenA:amaury-v1"!("transferFrom", "asidex:pair:amaury-v1", provider, "asidex:pair:amaury-v1", amtA, *txA) |
+                      for (@ra <- txA) {
+                        match ra {
+                          (false, msg) => {
+                            reserveACh!(rA) | reserveBCh!(rB) | lpSupplyCh!(supply) | lpBalances!(lpMap) |
+                            return!((false, msg))
+                          }
+                          (true, _) => {
+                            @"asidex:tokenB:amaury-v1"!("transferFrom", "asidex:pair:amaury-v1", provider, "asidex:pair:amaury-v1", amtB, *txB) |
+                            for (@rb <- txB) {
+                              match rb {
+                                (false, msg) => {
+                                  reserveACh!(rA) | reserveBCh!(rB) | lpSupplyCh!(supply) | lpBalances!(lpMap) |
+                                  return!((false, msg))
+                                }
+                                (true, _) => {
+                                  reserveACh!(rA + amtA) |
+                                  reserveBCh!(rB + amtB) |
+                                  lpSupplyCh!(supply + lp) |
+                                  lpBalances!(lpMap.set(provider, match lpMap.get(provider) { Nil => lp v => v + lp })) |
+                                  return!((true, lp, "Liquidity added"))
+                                }
                               }
                             }
                           }
@@ -343,38 +343,38 @@ in {
             else {
               if (tokenIn == "B") { out!((amountIn * 997 * rA) / (rB * 1000 + amountIn * 997)) }
               else { out!(0) }
-            }
-          } |
-          for (@amountOut <- out) {
-            if (amountOut <= 0 or amountOut < minOut) {
-              reserveACh!(rA) | reserveBCh!(rB) | return!((false, 0, "Slippage/unsupported"))
-            } else {
-              if ((tokenIn == "A" and amountOut >= rB) or (tokenIn == "B" and amountOut >= rA)) {
-                reserveACh!(rA) | reserveBCh!(rB) | return!((false, 0, "Insufficient liquidity"))
+            } |
+            for (@amountOut <- out) {
+              if (amountOut <= 0 or amountOut < minOut) {
+                reserveACh!(rA) | reserveBCh!(rB) | return!((false, 0, "Slippage/unsupported"))
               } else {
-                new txIn, txOut in {
-                  if (tokenIn == "A") {
-                    @"asidex:tokenA:amaury-v1"!("transferFrom", "asidex:pair:amaury-v1", trader, "asidex:pair:amaury-v1", amountIn, *txIn)
-                  } else {
-                    @"asidex:tokenB:amaury-v1"!("transferFrom", "asidex:pair:amaury-v1", trader, "asidex:pair:amaury-v1", amountIn, *txIn)
-                  } |
-                  for (@rin <- txIn) {
-                    match rin {
-                      (false, msg) => { reserveACh!(rA) | reserveBCh!(rB) | return!((false, 0, msg)) }
-                      (true, _) => {
-                        if (tokenIn == "A") {
-                          @"asidex:tokenB:amaury-v1"!("transfer", "asidex:pair:amaury-v1", to, amountOut, *txOut)
-                        } else {
-                          @"asidex:tokenA:amaury-v1"!("transfer", "asidex:pair:amaury-v1", to, amountOut, *txOut)
-                        } |
-                        for (@rout <- txOut) {
-                          match rout {
-                            (false, msg) => { reserveACh!(rA) | reserveBCh!(rB) | return!((false, 0, msg)) }
-                            (true, _) => {
-                              if (tokenIn == "A") {
-                                reserveACh!(rA + amountIn) | reserveBCh!(rB - amountOut) | return!((true, amountOut, "Swap OK"))
-                              } else {
-                                reserveACh!(rA - amountOut) | reserveBCh!(rB + amountIn) | return!((true, amountOut, "Swap OK"))
+                if ((tokenIn == "A" and amountOut >= rB) or (tokenIn == "B" and amountOut >= rA)) {
+                  reserveACh!(rA) | reserveBCh!(rB) | return!((false, 0, "Insufficient liquidity"))
+                } else {
+                  new txIn, txOut in {
+                    if (tokenIn == "A") {
+                      @"asidex:tokenA:amaury-v1"!("transferFrom", "asidex:pair:amaury-v1", trader, "asidex:pair:amaury-v1", amountIn, *txIn)
+                    } else {
+                      @"asidex:tokenB:amaury-v1"!("transferFrom", "asidex:pair:amaury-v1", trader, "asidex:pair:amaury-v1", amountIn, *txIn)
+                    } |
+                    for (@rin <- txIn) {
+                      match rin {
+                        (false, msg) => { reserveACh!(rA) | reserveBCh!(rB) | return!((false, 0, msg)) }
+                        (true, _) => {
+                          if (tokenIn == "A") {
+                            @"asidex:tokenB:amaury-v1"!("transfer", "asidex:pair:amaury-v1", to, amountOut, *txOut)
+                          } else {
+                            @"asidex:tokenA:amaury-v1"!("transfer", "asidex:pair:amaury-v1", to, amountOut, *txOut)
+                          } |
+                          for (@rout <- txOut) {
+                            match rout {
+                              (false, msg) => { reserveACh!(rA) | reserveBCh!(rB) | return!((false, 0, msg)) }
+                              (true, _) => {
+                                if (tokenIn == "A") {
+                                  reserveACh!(rA + amountIn) | reserveBCh!(rB - amountOut) | return!((true, amountOut, "Swap OK"))
+                                } else {
+                                  reserveACh!(rA - amountOut) | reserveBCh!(rB + amountIn) | return!((true, amountOut, "Swap OK"))
+                                }
                               }
                             }
                           }
