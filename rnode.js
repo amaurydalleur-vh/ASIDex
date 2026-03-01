@@ -153,14 +153,13 @@ export async function getTokenAllowance(tokenUri, owner, spender) {
 }
 
 export async function approveToken(tokenUri, spender, amount) {
-  // Owner is the connected wallet address
-  const owner = await connectWallet();
+  const caller = await connectWallet();
   const term = `
     new return, lookup(\`rho:registry:lookup\`) in {
       lookup!(\`${tokenUri}\`, *return) |
       for (token <- return) {
         new approveCh in {
-          token!("approve", "${owner}", "${spender}", ${amount}, *approveCh) |
+          token!("approve", "${caller}", "${spender}", ${amount}, *approveCh) |
           for (@res <- approveCh) { return!(res) }
         }
       }

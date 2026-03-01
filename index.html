@@ -584,30 +584,37 @@ const RNODE = {
   IDE_URL: "https://wallet.dev.asichain.io",
 };
 
-const URI_DEFAULTS = {
-  TOKEN_A: "rho:id:REPLACE_TOKEN_A",
-  TOKEN_B: "rho:id:REPLACE_TOKEN_B",
-  FACTORY: "rho:id:REPLACE_FACTORY",
-  ROUTER: "rho:id:REPLACE_ROUTER",
-  PAIR_AB: "rho:id:REPLACE_PAIR",
+const CONFIG_DEFAULTS = {
+  NAMESPACE: "amaury-v1",
+  POOL_SPENDER: "asidex:pair:amaury-v1",
 };
-const URI_STORAGE_KEY = "asidex_uris_v1";
-const URIS = (() => {
+const CONFIG_STORAGE_KEY = "asidex_kernel_cfg_v1";
+const CONFIG = (() => {
   try {
-    const saved = JSON.parse(localStorage.getItem(URI_STORAGE_KEY) || "{}");
-    return { ...URI_DEFAULTS, ...saved };
+    const saved = JSON.parse(localStorage.getItem(CONFIG_STORAGE_KEY) || "{}");
+    return { ...CONFIG_DEFAULTS, ...saved };
   } catch {
-    return { ...URI_DEFAULTS };
+    return { ...CONFIG_DEFAULTS };
   }
 })();
-function saveUris(next) {
-  Object.assign(URIS, next);
-  localStorage.setItem(URI_STORAGE_KEY, JSON.stringify(URIS));
+function saveConfig(next) {
+  Object.assign(CONFIG, next);
+  localStorage.setItem(CONFIG_STORAGE_KEY, JSON.stringify(CONFIG));
 }
+function getChannels() {
+  const ns = CONFIG.NAMESPACE;
+  return {
+    TOKEN_A: `@"asidex:tokenA:${ns}"`,
+    TOKEN_B: `@"asidex:tokenB:${ns}"`,
+    PAIR: `@"asidex:pair:${ns}"`,
+    ROUTER: `@"asidex:router:${ns}"`,
+  };
+}
+let CHANNELS = getChannels();
 
 const TOKENS = [
-  { uri: URIS.TOKEN_A, symbol: "TKNA", name: "Token A", cls: "a", decimals: 18 },
-  { uri: URIS.TOKEN_B, symbol: "TKNB", name: "Token B", cls: "b", decimals: 18 },
+  { id: "A", symbol: "TKNA", name: "Token A", cls: "a", decimals: 18 },
+  { id: "B", symbol: "TKNB", name: "Token B", cls: "b", decimals: 18 },
 ];
 
 // ---- Mini state store ----
@@ -620,7 +627,7 @@ const state = {
   swapOut: { tokenIdx: 1, amount: "" },
   liqA: "", liqB: "",
   lpRemove: "",
-  pool: { reserveA: 0, reserveB: 0, lpSupply: 0, userLP: 0 },
+  pool: { reserveA: 0, reserveB: 0, lpSupply: 0, userLP: 0, spender: CONFIG.POOL_SPENDER },
   balances: { 0: 0, 1: 0 },
   loading: false,
   toast: null,
@@ -647,24 +654,18 @@ function toWei(n, d = 18) {
 function shortAddr(a) {
   return a ? a.slice(0, 8) + "..." + a.slice(-4) : "";
 }
-function hasConfiguredUris() {
-  return !Object.values(URIS).some((v) => String(v).includes("REPLACE_"));
+function hasKernelConfigured() {
+  return !!CONFIG.NAMESPACE && CONFIG.NAMESPACE.length > 0;
 }
 function openUriConfig() {
-  const tokenA = prompt("Token A URI (rho:id:...)", URIS.TOKEN_A);
-  if (tokenA == null) return;
-  const tokenB = prompt("Token B URI (rho:id:...)", URIS.TOKEN_B);
-  if (tokenB == null) return;
-  const factory = prompt("Factory URI (rho:id:...)", URIS.FACTORY);
-  if (factory == null) return;
-  const router = prompt("Router URI (rho:id:...)", URIS.ROUTER);
-  if (router == null) return;
-  const pair = prompt("Pair URI (rho:id:...)", URIS.PAIR_AB);
-  if (pair == null) return;
-  saveUris({ TOKEN_A: tokenA, TOKEN_B: tokenB, FACTORY: factory, ROUTER: router, PAIR_AB: pair });
-  TOKENS[0].uri = URIS.TOKEN_A;
-  TOKENS[1].uri = URIS.TOKEN_B;
-  showToast("Contract URIs updated.", "success");
+  const ns = prompt("Kernel namespace (same as ASIDexKernel.rho)", CONFIG.NAMESPACE);
+  if (ns == null || ns.trim() === "") return;
+  const spenderDefault = `asidex:pair:${ns.trim()}`;
+  const spender = prompt("Pool spender string", CONFIG.POOL_SPENDER || spenderDefault);
+  if (spender == null || spender.trim() === "") return;
+  saveConfig({ NAMESPACE: ns.trim(), POOL_SPENDER: spender.trim() });
+  CHANNELS = getChannels();
+  showToast("Kernel namespace updated.", "success");
   refreshOnchain();
 }
 function priceImpact(amtIn, rIn, rOut) {
@@ -714,26 +715,16 @@ async function queryInt(term) {
 }
 
 async function fetchPoolData() {
-  if (!hasConfiguredUris()) return { reserveA: 0, reserveB: 0, lpSupply: 0 };
+  if (!hasKernelConfigured()) return { reserveA: 0, reserveB: 0, lpSupply: 0 };
   const reserveTerm = `
-    new ret, l(\`rho:registry:lookup\`) in {
-      l!(\`${URIS.PAIR_AB}\`, *ret) |
-      for (pair <- ret) {
-        new r in {
-          pair!("getReserves", *r) |
-          for (@res <- r) { ret!(res) }
-        }
-      }
+    new ret, r in {
+      ${CHANNELS.PAIR}!("getReserves", *r) |
+      for (@res <- r) { ret!(res) }
     }`;
   const supplyTerm = `
-    new ret, l(\`rho:registry:lookup\`) in {
-      l!(\`${URIS.PAIR_AB}\`, *ret) |
-      for (pair <- ret) {
-        new s in {
-          pair!("getLPSupply", *s) |
-          for (@sup <- s) { ret!(sup) }
-        }
-      }
+    new ret, s in {
+      ${CHANNELS.PAIR}!("getLPSupply", *s) |
+      for (@sup <- s) { ret!(sup) }
     }`;
 
   const reservesExpr = await explore(reserveTerm);
@@ -769,44 +760,48 @@ async function connectWallet() {
 }
 
 async function fetchTokenBalance(tokenUri, wallet) {
+  const tokenChannel = tokenUri;
   const term = `
-    new ret, l(\`rho:registry:lookup\`) in {
-      l!(\`${tokenUri}\`, *ret) |
-      for (token <- ret) {
-        new b in {
-          token!("balanceOf", "${wallet}", *b) |
-          for (@bal <- b) { ret!(bal) }
-        }
-      }
+    new ret, b in {
+      ${tokenChannel}!("balanceOf", "${wallet}", *b) |
+      for (@bal <- b) { ret!(bal) }
     }`;
   return await queryInt(term);
 }
 
 async function fetchLPBalance(wallet) {
   const term = `
-    new ret, l(\`rho:registry:lookup\`) in {
-      l!(\`${URIS.PAIR_AB}\`, *ret) |
-      for (pair <- ret) {
-        new b in {
-          pair!("getLPBalance", "${wallet}", *b) |
-          for (@bal <- b) { ret!(bal) }
-        }
-      }
+    new ret, b in {
+      ${CHANNELS.PAIR}!("getLPBalance", "${wallet}", *b) |
+      for (@bal <- b) { ret!(bal) }
     }`;
   return await queryInt(term);
 }
 
+async function fetchPoolSpender() {
+  if (!hasKernelConfigured()) return CONFIG.POOL_SPENDER;
+  const term = `
+    new ret, s in {
+      ${CHANNELS.PAIR}!("getPoolSpender", *s) |
+      for (@spender <- s) { ret!(spender) }
+    }`;
+  const expr = await explore(term);
+  return expr?.ExprString?.data || CONFIG.POOL_SPENDER;
+}
+
 async function refreshOnchain() {
   const pool = await fetchPoolData();
-  state.pool = { ...pool, userLP: 0 };
-  if (state.wallet && hasConfiguredUris()) {
-    const [b0, b1, lp] = await Promise.all([
-      fetchTokenBalance(URIS.TOKEN_A, state.wallet),
-      fetchTokenBalance(URIS.TOKEN_B, state.wallet),
+  state.pool = { ...pool, userLP: 0, spender: CONFIG.POOL_SPENDER };
+  if (state.wallet && hasKernelConfigured()) {
+    const [b0, b1, lp, spender] = await Promise.all([
+      fetchTokenBalance(CHANNELS.TOKEN_A, state.wallet),
+      fetchTokenBalance(CHANNELS.TOKEN_B, state.wallet),
       fetchLPBalance(state.wallet),
+      fetchPoolSpender(),
     ]);
     state.balances = { 0: b0, 1: b1 };
     state.pool.userLP = lp;
+    state.pool.spender = spender || CONFIG.POOL_SPENDER;
   } else {
     state.balances = { 0: 0, 1: 0 };
   }
@@ -868,7 +863,7 @@ function updateSwapOutput() {
 async function doSwap() {
   if (!state.wallet) { showToast("Connect your wallet first", "error"); return; }
   if (!state.swapIn.amount) { showToast("Enter an amount", "error"); return; }
-  if (!hasConfiguredUris()) { showToast("Configure contract URIs first.", "error"); return; }
+  if (!hasKernelConfigured()) { showToast("Configure kernel namespace first.", "error"); return; }
   state.loading = true;
   render();
   try {
@@ -882,32 +877,22 @@ async function doSwap() {
     );
     const minOut = Math.floor(out * (1 - state.slippage / 100));
     const term = `
-      new ret, l(\`rho:registry:lookup\`) in {
-        l!(\`${URIS.ROUTER}\`, *ret) |
-        for (router <- ret) {
-          new s in {
-            router!("swapExactTokensForTokens",
-              "${state.wallet}",
-              ${amtIn},
-              ${minOut},
-              "${tkIn.uri}",
-              "${tkOut.uri}",
-              "${state.wallet}",
-              *s
-            ) |
-            for (@res <- s) { ret!(res) }
-          }
-        }
+      new ret, s in {
+        ${CHANNELS.ROUTER}!("swapExactTokensForTokens",
+          "${state.wallet}",
+          ${amtIn},
+          ${minOut},
+          "${tkIn.id}",
+          "${tkOut.id}",
+          "${state.wallet}",
+          *s
+        ) |
+        for (@res <- s) { ret!(res) }
       }`;
     const approveInTerm = `
-      new ret, l(\`rho:registry:lookup\`) in {
-        l!(\`${tkIn.uri}\`, *ret) |
-        for (token <- ret) {
-          new a in {
-            token!("approve", "${state.wallet}", "${state.wallet}", ${amtIn}, *a) |
-            for (@res <- a) { ret!(res) }
-          }
-        }
+      new ret, a in {
+        ${state.swapIn.tokenIdx === 0 ? CHANNELS.TOKEN_A : CHANNELS.TOKEN_B}!("approve", "${state.wallet}", "${state.pool.spender}", ${amtIn}, *a) |
+        for (@res <- a) { ret!(res) }
       }`;
     await deployWithWalletOrFallback(approveInTerm);
     await deployWithWalletOrFallback(term);
@@ -925,7 +910,7 @@ async function doSwap() {
 async function doAddLiquidity() {
   if (!state.wallet) { showToast("Connect your wallet first", "error"); return; }
   if (!state.liqA) { showToast("Enter token A amount", "error"); return; }
-  if (!hasConfiguredUris()) { showToast("Configure contract URIs first.", "error"); return; }
+  if (!hasKernelConfigured()) { showToast("Configure kernel namespace first.", "error"); return; }
   state.loading = true;
   render();
   try {
@@ -937,44 +922,27 @@ async function doAddLiquidity() {
     if (!amtB || Number(amtB) <= 0) throw new Error("Invalid token B amount.");
 
     // Devnet PoC nuance: Pair.rho currently calls transferFrom with caller=provider,
-    // so allowance is checked on (owner=provider, spender=provider).
+    // spender is the configured pair spender string.
     const approveATerm = `
-      new ret, l(\`rho:registry:lookup\`) in {
-        l!(\`${URIS.TOKEN_A}\`, *ret) |
-        for (token <- ret) {
-          new a in {
-            token!("approve", "${state.wallet}", "${state.wallet}", ${amtA}, *a) |
-            for (@res <- a) { ret!(res) }
-          }
-        }
+      new ret, a in {
+        ${CHANNELS.TOKEN_A}!("approve", "${state.wallet}", "${state.pool.spender}", ${amtA}, *a) |
+        for (@res <- a) { ret!(res) }
       }`;
     const approveBTerm = `
-      new ret, l(\`rho:registry:lookup\`) in {
-        l!(\`${URIS.TOKEN_B}\`, *ret) |
-        for (token <- ret) {
-          new a in {
-            token!("approve", "${state.wallet}", "${state.wallet}", ${amtB}, *a) |
-            for (@res <- a) { ret!(res) }
-          }
-        }
+      new ret, a in {
+        ${CHANNELS.TOKEN_B}!("approve", "${state.wallet}", "${state.pool.spender}", ${amtB}, *a) |
+        for (@res <- a) { ret!(res) }
       }`;
     const addTerm = `
-      new ret, l(\`rho:registry:lookup\`) in {
-        l!(\`${URIS.ROUTER}\`, *ret) |
-        for (router <- ret) {
-          new a in {
-            router!("addLiquidity",
-              "${state.wallet}",
-              "${URIS.TOKEN_A}",
-              "${URIS.TOKEN_B}",
-              ${amtA},
-              ${amtB},
-              0,
-              *a
-            ) |
-            for (@res <- a) { ret!(res) }
-          }
-        }
+      new ret, a in {
+        ${CHANNELS.ROUTER}!("addLiquidity",
+          "${state.wallet}",
+          ${amtA},
+          ${amtB},
+          0,
+          *a
+        ) |
+        for (@res <- a) { ret!(res) }
       }`;
 
     await deployWithWalletOrFallback(approveATerm);
@@ -995,28 +963,21 @@ async function doAddLiquidity() {
 async function doRemoveLiquidity() {
   if (!state.wallet) { showToast("Connect your wallet first", "error"); return; }
   if (!state.lpRemove) { showToast("Enter LP amount to remove", "error"); return; }
-  if (!hasConfiguredUris()) { showToast("Configure contract URIs first.", "error"); return; }
+  if (!hasKernelConfigured()) { showToast("Configure kernel namespace first.", "error"); return; }
   state.loading = true;
   render();
   try {
     const lpAmt = toWei(state.lpRemove);
     const term = `
-      new ret, l(\`rho:registry:lookup\`) in {
-        l!(\`${URIS.ROUTER}\`, *ret) |
-        for (router <- ret) {
-          new a in {
-            router!("removeLiquidity",
-              "${state.wallet}",
-              "${URIS.TOKEN_A}",
-              "${URIS.TOKEN_B}",
-              ${lpAmt},
-              0,
-              0,
-              *a
-            ) |
-            for (@res <- a) { ret!(res) }
-          }
-        }
+      new ret, a in {
+        ${CHANNELS.ROUTER}!("removeLiquidity",
+          "${state.wallet}",
+          ${lpAmt},
+          0,
+          0,
+          *a
+        ) |
+        for (@res <- a) { ret!(res) }
       }`;
     await deployWithWalletOrFallback(term);
     showToast("Remove liquidity deploy submitted.", "success");
@@ -1076,7 +1037,7 @@ function render() {
         ${state.wallet ? "● " + shortAddr(state.wallet) : "Connect Wallet"}
       </button>
       <button class="wallet-btn" onclick="openUriConfig()" style="border-color: var(--yellow); color: var(--yellow)">
-        Configure URIs
+        Configure Namespace
       </button>
     </div>
   </header>
@@ -1429,10 +1390,10 @@ window.state            = state;
 // ---- Boot ----
 (async () => {
   await refreshOnchain();
-  if (!hasConfiguredUris()) {
-    showToast("Configure contract URIs to query live Devnet data.", "info");
+  if (!hasKernelConfigured()) {
+    showToast("Configure kernel namespace to query live Devnet data.", "info");
     setTimeout(() => {
-      if (confirm("No contract URIs configured yet. Configure now?")) openUriConfig();
+      if (confirm("No kernel namespace configured yet. Configure now?")) openUriConfig();
     }, 300);
   }
   render();

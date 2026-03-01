@@ -3,6 +3,19 @@
 
 ---
 
+## Quickstart (No URI Workflow) - Recommended
+
+1. Open `ASIDexKernel.rho`.
+2. Replace all `ASIDEX_NS` with your namespace slug (example: `amaury-v1`).
+3. Deploy once in wallet IDE (`Deploy`, phlo ~ 1,500,000 to 2,000,000).
+4. Open `index.html`.
+5. Click `Configure Namespace` and use the same namespace.
+6. Connect wallet and start using swap/liquidity.
+
+This path does **not** require collecting `rho:id:...` URIs.
+
+---
+
 ## Architecture Overview
 
 ```
@@ -85,9 +98,9 @@ Run the same for Token B.
 1. Open `contracts/Pair.rho`
 2. Replace ALL occurrences of `TOKEN_A_URI` with your actual Token A URI
 3. Replace ALL occurrences of `TOKEN_B_URI` with your actual Token B URI
-4. Replace `PAIR_POOL_ADDR` with your wallet address (the pool "holds" tokens
-   via the transfer mechanism; for DevNet this is a simplification — 
-   in production use a contract-owned address)
+4. Replace `PAIR_POOL_ADDR` with the canonical pool spender string used for approvals
+   (for DevNet PoC this is often your wallet address, but it must be consistent
+   between Pair deploy and UI configuration)
 5. Deploy with Phlo limit: **1,000,000**
 6. **Save the URI** → `PAIR_URI`
 
@@ -141,7 +154,7 @@ Expected response: `(true, "Pair registered", "PAIR_URI")`
 
 ## Step 8 — Approve Tokens for the Pair Contract
 
-Before adding liquidity or swapping, approve the Pair contract
+Before adding liquidity or swapping, approve the configured pool spender (`PAIR_POOL_ADDR`)
 to spend your tokens:
 
 ```rholang
@@ -152,7 +165,7 @@ new return, lookup(`rho:registry:lookup`) in {
       tokenA!(
         "approve",
         "YOUR_WALLET_ADDRESS",
-        "PAIR_URI_HERE",          // spender = the pair contract's pool address
+        "PAIR_POOL_ADDR_HERE",    // must match PAIR_POOL_ADDR used in Pair.rho
         1000000000000000000000,   // approve large amount
         *approveCh
       ) |
@@ -177,6 +190,7 @@ Repeat for Token B.
      FACTORY: "rho:id:YOUR_FACTORY_URI",
      ROUTER:  "rho:id:YOUR_ROUTER_URI",
      PAIR_AB: "rho:id:YOUR_PAIR_URI",
+     POOL_SPENDER: "PAIR_POOL_ADDR_HERE",
    };
    ```
 
@@ -280,3 +294,4 @@ asi-dex/
 │       └── rnode.js   ← RNode HTTP client SDK
 └── DEPLOY.md          ← This file
 ```
+

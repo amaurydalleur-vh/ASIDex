@@ -67,17 +67,25 @@ in {
 
     // ---- getAmountOut ----
     contract routerContract(@"getAmountOut", @amountIn, @tokenInUri, @tokenOutUri, return) = {
-      new resCh in {
-        _getPair!(tokenInUri, tokenOutUri, *resCh) |
-        for (@res <- resCh) {
-          match res {
-            (false, _, msg) => return!((false, 0, msg))
-            (true, pairUri, _) => {
-              new pairCh, calcCh in {
-                lookup!(pairUri, *pairCh) |
-                for (pair <- pairCh) {
-                  pair!("getAmountOut", amountIn, tokenInUri, *calcCh) |
-                  for (@calc <- calcCh) { return!(calc) }
+      if (amountIn <= 0) {
+        return!((false, 0, "Invalid amountIn"))
+      } else {
+        if (tokenInUri == tokenOutUri) {
+          return!((false, 0, "tokenIn == tokenOut"))
+        } else {
+          new resCh in {
+            _getPair!(tokenInUri, tokenOutUri, *resCh) |
+            for (@res <- resCh) {
+              match res {
+                (false, _, msg) => return!((false, 0, msg))
+                (true, pairUri, _) => {
+                  new pairCh, calcCh in {
+                    lookup!(pairUri, *pairCh) |
+                    for (pair <- pairCh) {
+                      pair!("getAmountOut", amountIn, tokenInUri, *calcCh) |
+                      for (@calc <- calcCh) { return!(calc) }
+                    }
+                  }
                 }
               }
             }
@@ -93,17 +101,29 @@ in {
       @tokenInUri, @tokenOutUri, @to,
       return
     ) = {
-      new resCh in {
-        _getPair!(tokenInUri, tokenOutUri, *resCh) |
-        for (@res <- resCh) {
-          match res {
-            (false, _, msg) => return!((false, 0, msg))
-            (true, pairUri, _) => {
-              new pairCh, swapCh in {
-                lookup!(pairUri, *pairCh) |
-                for (pair <- pairCh) {
-                  pair!("swap", caller, amountIn, tokenInUri, minAmountOut, to, *swapCh) |
-                  for (@swapRes <- swapCh) { return!(swapRes) }
+      if (amountIn <= 0) {
+        return!((false, 0, "Invalid amountIn"))
+      } else {
+        if (tokenInUri == tokenOutUri) {
+          return!((false, 0, "tokenIn == tokenOut"))
+        } else {
+          if (to == "") {
+            return!((false, 0, "Invalid recipient"))
+          } else {
+            new resCh in {
+              _getPair!(tokenInUri, tokenOutUri, *resCh) |
+              for (@res <- resCh) {
+                match res {
+                  (false, _, msg) => return!((false, 0, msg))
+                  (true, pairUri, _) => {
+                    new pairCh, swapCh in {
+                      lookup!(pairUri, *pairCh) |
+                      for (pair <- pairCh) {
+                        pair!("swap", caller, amountIn, tokenInUri, minAmountOut, to, *swapCh) |
+                        for (@swapRes <- swapCh) { return!(swapRes) }
+                      }
+                    }
+                  }
                 }
               }
             }
@@ -119,17 +139,25 @@ in {
       @amtA, @amtB, @minLP,
       return
     ) = {
-      new resCh in {
-        _getPair!(tokenAUri, tokenBUri, *resCh) |
-        for (@res <- resCh) {
-          match res {
-            (false, _, msg) => return!((false, 0, msg))
-            (true, pairUri, _) => {
-              new pairCh, liqCh in {
-                lookup!(pairUri, *pairCh) |
-                for (pair <- pairCh) {
-                  pair!("addLiquidity", provider, amtA, amtB, minLP, *liqCh) |
-                  for (@liqRes <- liqCh) { return!(liqRes) }
+      if (amtA <= 0 or amtB <= 0) {
+        return!((false, 0, "Invalid liquidity amounts"))
+      } else {
+        if (tokenAUri == tokenBUri) {
+          return!((false, 0, "tokenA == tokenB"))
+        } else {
+          new resCh in {
+            _getPair!(tokenAUri, tokenBUri, *resCh) |
+            for (@res <- resCh) {
+              match res {
+                (false, _, msg) => return!((false, 0, msg))
+                (true, pairUri, _) => {
+                  new pairCh, liqCh in {
+                    lookup!(pairUri, *pairCh) |
+                    for (pair <- pairCh) {
+                      pair!("addLiquidity", provider, amtA, amtB, minLP, *liqCh) |
+                      for (@liqRes <- liqCh) { return!(liqRes) }
+                    }
+                  }
                 }
               }
             }
@@ -145,17 +173,25 @@ in {
       @lpAmount, @minA, @minB,
       return
     ) = {
-      new resCh in {
-        _getPair!(tokenAUri, tokenBUri, *resCh) |
-        for (@res <- resCh) {
-          match res {
-            (false, _, msg) => return!((false, 0, msg))
-            (true, pairUri, _) => {
-              new pairCh, remCh in {
-                lookup!(pairUri, *pairCh) |
-                for (pair <- pairCh) {
-                  pair!("removeLiquidity", provider, lpAmount, minA, minB, *remCh) |
-                  for (@remRes <- remCh) { return!(remRes) }
+      if (lpAmount <= 0) {
+        return!((false, 0, "Invalid LP amount"))
+      } else {
+        if (tokenAUri == tokenBUri) {
+          return!((false, 0, "tokenA == tokenB"))
+        } else {
+          new resCh in {
+            _getPair!(tokenAUri, tokenBUri, *resCh) |
+            for (@res <- resCh) {
+              match res {
+                (false, _, msg) => return!((false, 0, msg))
+                (true, pairUri, _) => {
+                  new pairCh, remCh in {
+                    lookup!(pairUri, *pairCh) |
+                    for (pair <- pairCh) {
+                      pair!("removeLiquidity", provider, lpAmount, minA, minB, *remCh) |
+                      for (@remRes <- remCh) { return!(remRes) }
+                    }
+                  }
                 }
               }
             }

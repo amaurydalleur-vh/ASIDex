@@ -1,35 +1,26 @@
 // ============================================================
-//  ASI-DEX: Fungible Token Contract (ERC-20 equivalent)
-//  Deploy one instance per token (e.g. TokenA, TokenB)
-//  
+//  ASI-DEX: Fungible Token Contract (hardened PoC)
+//
 //  Registry keys exported:
-//    token!("name")        -> String
-//    token!("symbol")      -> String
-//    token!("decimals")    -> Int
-//    token!("totalSupply") -> Int
-//    token!("balanceOf", addr, return)
-//    token!("allowance", owner, spender, return)
-//    token!("transfer", from, to, amount, return)
-//    token!("approve", owner, spender, amount, return)
+//    token!("name", return)                     -> String
+//    token!("symbol", return)                   -> String
+//    token!("decimals", return)                 -> Int
+//    token!("totalSupply", return)              -> Int
+//    token!("balanceOf", addr, return)          -> Int
+//    token!("allowance", owner, spender, return)-> Int
+//    token!("approve", caller, spender, amount, return)
+//    token!("transfer", caller, to, amount, return)
 //    token!("transferFrom", caller, from, to, amount, return)
-//    token!("mint", to, amount, adminKey, return)    [admin only]
-//    token!("burn", from, amount, adminKey, return)  [admin only]
+//    token!("mint", to, amount, adminKey, return) [admin only]
+//    token!("burn", from, amount, adminKey, return) [admin only]
 // ============================================================
 
 new
-  // Public registry channel - store this URI after deploy
   tokenContract,
-  // Internal state channels
-  balances,
-  allowances,
-  // Admin capability (keep private!)
   adminCap,
-  // Logging
-  stdout(`rho:io:stdout`),
-  // Registry
-  registerCh,
+  insertArbitrary(`rho:registry:insertArbitrary`),
   uriCh,
-  insertArbitrary(`rho:registry:insertArbitrary`)
+  stdout(`rho:io:stdout`)
 in {
 
   // ---- Token Metadata (edit before deploy) ----
@@ -37,174 +28,203 @@ in {
   contract tokenContract(@"symbol", return) = { return!("TKNA") } |
   contract tokenContract(@"decimals", return) = { return!(18) } |
 
-  // ---- State: balances map ----
-  // balances holds { address -> amount } map
-  new balanceMap in {
+  new balanceMap, allowanceMap, supplyCh in {
     balanceMap!({}) |
+    allowanceMap!({}) |
+    supplyCh!(0) |
 
-    // ---- balanceOf ----
     contract tokenContract(@"balanceOf", @addr, return) = {
       for (@map <- balanceMap) {
         balanceMap!(map) |
         match map.get(addr) {
-          Nil  => return!(0)
-          bal  => return!(bal)
+          Nil => return!(0)
+          bal => return!(bal)
         }
       }
     } |
 
-    // ---- totalSupply (computed dynamically) ----
     contract tokenContract(@"totalSupply", return) = {
-      for (@map <- balanceMap) {
-        balanceMap!(map) |
-        new sumCh in {
-          // Sum all values in the map
-          new foldCh in {
-            contract foldCh(@remaining, @acc) = {
-              match remaining {
-                {}         => sumCh!(acc)
-                {k: v ...rest} => foldCh!(rest, acc + v)
-              }
-            } |
-            foldCh!(map, 0) |
-            for (@total <- sumCh) { return!(total) }
-          }
+      for (@supply <- supplyCh) {
+        supplyCh!(supply) |
+        return!(supply)
+      }
+    } |
+
+    contract tokenContract(@"allowance", @owner, @spender, return) = {
+      for (@amap <- allowanceMap) {
+        allowanceMap!(amap) |
+        match amap.get((owner, spender)) {
+          Nil => return!(0)
+          amt => return!(amt)
         }
       }
     } |
 
-    // ---- allowances map ----
-    new allowanceMap in {
-      allowanceMap!({}) |
-
-      // ---- allowance ----
-      contract tokenContract(@"allowance", @owner, @spender, return) = {
+    contract tokenContract(@"approve", @caller, @spender, @amount, return) = {
+      if (amount < 0) {
+        return!((false, "Invalid amount"))
+      } else {
         for (@amap <- allowanceMap) {
-          allowanceMap!(amap) |
-          match amap.get((owner, spender)) {
-            Nil => return!(0)
-            amt => return!(amt)
-          }
+          allowanceMap!(amap.set((caller, spender), amount)) |
+          return!((true, "Approved"))
         }
-      } |
+      }
+    } |
 
-      // ---- approve ----
-      contract tokenContract(@"approve", @owner, @spender, @amount, return) = {
-        for (@amap <- allowanceMap) {
-          allowanceMap!(amap.set((owner, spender), amount)) |
-          return!(true)
-        }
-      } |
-
-      // ---- _transfer (internal) ----
-      new _transfer in {
-        contract _transfer(@from, @to, @amount, return) = {
+    new _transfer in {
+      contract _transfer(@from, @to, @amount, return) = {
+        if (amount <= 0) {
+          return!((false, "Invalid amount"))
+        } else {
           for (@map <- balanceMap) {
             match map.get(from) {
               Nil => {
                 balanceMap!(map) |
                 return!((false, "Insufficient balance"))
               }
-              bal => {
-                if (bal < amount) {
+              fromBal => {
+                if (fromBal < amount) {
                   balanceMap!(map) |
                   return!((false, "Insufficient balance"))
                 } else {
                   balanceMap!(
                     map
-                      .set(from, bal - amount)
-                      .set(to, match map.get(to) { Nil => amount  v => v + amount })
+                      .set(from, fromBal - amount)
+                      .set(to, match map.get(to) { Nil => amount v => v + amount })
                   ) |
                   return!((true, "OK"))
                 }
               }
             }
           }
-        } |
+        }
+      } |
 
-        // ---- transfer ----
-        contract tokenContract(@"transfer", @from, @to, @amount, return) = {
-          new resultCh in {
-            _transfer!(from, to, amount, *resultCh) |
-            for (@res <- resultCh) { return!(res) }
+      contract tokenContract(@"transfer", @caller, @to, @amount, return) = {
+        if (to == "") {
+          return!((false, "Invalid recipient"))
+        } else {
+          new txCh in {
+            _transfer!(caller, to, amount, *txCh) |
+            for (@res <- txCh) { return!(res) }
           }
-        } |
+        }
+      } |
 
-        // ---- transferFrom ----
-        contract tokenContract(@"transferFrom", @caller, @from, @to, @amount, return) = {
-          for (@amap <- allowanceMap) {
-            match amap.get((from, caller)) {
-              Nil => {
-                allowanceMap!(amap) |
-                return!((false, "No allowance"))
-              }
-              allowed => {
-                if (allowed < amount) {
+      contract tokenContract(@"transferFrom", @caller, @from, @to, @amount, return) = {
+        if (to == "") {
+          return!((false, "Invalid recipient"))
+        } else {
+          if (caller == from) {
+            new txCh in {
+              _transfer!(from, to, amount, *txCh) |
+              for (@res <- txCh) { return!(res) }
+            }
+          } else {
+            for (@amap <- allowanceMap) {
+              match amap.get((from, caller)) {
+                Nil => {
                   allowanceMap!(amap) |
-                  return!((false, "Allowance exceeded"))
-                } else {
-                  allowanceMap!(amap.set((from, caller), allowed - amount)) |
-                  new resultCh in {
-                    _transfer!(from, to, amount, *resultCh) |
-                    for (@res <- resultCh) { return!(res) }
+                  return!((false, "No allowance"))
+                }
+                allowed => {
+                  if (allowed < amount) {
+                    allowanceMap!(amap) |
+                    return!((false, "Allowance exceeded"))
+                  } else {
+                    new txCh in {
+                      _transfer!(from, to, amount, *txCh) |
+                      for (@res <- txCh) {
+                        match res {
+                          (false, msg) => {
+                            allowanceMap!(amap) |
+                            return!((false, msg))
+                          }
+                          (true, _) => {
+                            allowanceMap!(amap.set((from, caller), allowed - amount)) |
+                            return!((true, "OK"))
+                          }
+                        }
+                      }
+                    }
                   }
                 }
               }
             }
           }
-        } |
+        }
+      } |
 
-        // ---- mint (admin only) ----
-        contract tokenContract(@"mint", @to, @amount, adminKey, return) = {
-          for (@key <- adminKey) {
-            for (@cap <- adminCap) {
-              if (key == cap) {
-                adminCap!(cap) |
+      contract tokenContract(@"mint", @to, @amount, adminKey, return) = {
+        for (@key <- adminKey) {
+          for (@cap <- adminCap) {
+            if (key != cap) {
+              adminCap!(cap) |
+              return!((false, "Unauthorized"))
+            } else {
+              adminCap!(cap) |
+              if (amount <= 0) {
+                return!((false, "Invalid amount"))
+              } else {
                 for (@map <- balanceMap) {
-                  balanceMap!(
-                    map.set(to, match map.get(to) { Nil => amount  v => v + amount })
-                  ) |
-                  return!((true, "Minted"))
+                  for (@supply <- supplyCh) {
+                    balanceMap!(map.set(to, match map.get(to) { Nil => amount v => v + amount })) |
+                    supplyCh!(supply + amount) |
+                    return!((true, "Minted"))
+                  }
                 }
-              } else {
-                adminCap!(cap) |
-                return!((false, "Unauthorized"))
-              }
-            }
-          }
-        } |
-
-        // ---- burn (admin only) ----
-        contract tokenContract(@"burn", @from, @amount, adminKey, return) = {
-          for (@key <- adminKey) {
-            for (@cap <- adminCap) {
-              if (key == cap) {
-                adminCap!(cap) |
-                new resultCh in {
-                  _transfer!(from, "0x0", amount, *resultCh) |
-                  for (@res <- resultCh) { return!(res) }
-                }
-              } else {
-                adminCap!(cap) |
-                return!((false, "Unauthorized"))
               }
             }
           }
         }
+      } |
 
-      } // end _transfer block
-    } // end allowanceMap block
-  } // end balanceMap block
-  |
+      contract tokenContract(@"burn", @from, @amount, adminKey, return) = {
+        for (@key <- adminKey) {
+          for (@cap <- adminCap) {
+            if (key != cap) {
+              adminCap!(cap) |
+              return!((false, "Unauthorized"))
+            } else {
+              adminCap!(cap) |
+              if (amount <= 0) {
+                return!((false, "Invalid amount"))
+              } else {
+                for (@map <- balanceMap) {
+                  for (@supply <- supplyCh) {
+                    match map.get(from) {
+                      Nil => {
+                        balanceMap!(map) |
+                        supplyCh!(supply) |
+                        return!((false, "Insufficient balance"))
+                      }
+                      bal => {
+                        if (bal < amount) {
+                          balanceMap!(map) |
+                          supplyCh!(supply) |
+                          return!((false, "Insufficient balance"))
+                        } else {
+                          balanceMap!(map.set(from, bal - amount)) |
+                          supplyCh!(supply - amount) |
+                          return!((true, "Burned"))
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  } |
 
-  // ---- Set admin capability ----
-  // IMPORTANT: Replace "CHANGE_ME_SECRET_ADMIN_KEY" before deploying!
+  // IMPORTANT: replace before deploy
   adminCap!("CHANGE_ME_SECRET_ADMIN_KEY") |
 
-  // ---- Register on-chain and print URI ----
   insertArbitrary!(*tokenContract, *uriCh) |
   for (@uri <- uriCh) {
     stdout!(["Token deployed at URI:", uri])
-    // Save this URI! You need it for the Factory & Router.
   }
 }

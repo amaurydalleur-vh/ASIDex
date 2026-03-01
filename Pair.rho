@@ -1,59 +1,45 @@
 // ============================================================
-//  ASI-DEX: Pair / AMM Pool Contract
+//  ASI-DEX: Pair / AMM Pool Contract (hardened PoC)
 //
-//  Implements Uniswap V2-style constant product AMM: x * y = k
-//  Manages reserves for two tokens and issues LP tokens.
-//
-//  SETUP: Replace TOKEN_A_URI and TOKEN_B_URI with actual
-//         registry URIs from deploying Token.rho twice.
+//  SETUP: replace TOKEN_A_URI, TOKEN_B_URI and PAIR_POOL_ADDR before deploy.
 //
 //  Registry keys exported:
-//    pair!("getReserves", return)           -> (reserveA, reserveB)
-//    pair!("getTokens", return)             -> (tokenAUri, tokenBUri)
-//    pair!("getLPBalance", addr, return)    -> Int
-//    pair!("getLPSupply", return)           -> Int
+//    pair!("getTokens", return)                 -> (tokenAUri, tokenBUri)
+//    pair!("getPoolSpender", return)            -> String
+//    pair!("getReserves", return)               -> (reserveA, reserveB)
+//    pair!("getLPBalance", addr, return)        -> Int
+//    pair!("getLPSupply", return)               -> Int
+//    pair!("getAmountOut", amountIn, tokenIn, return)
 //    pair!("addLiquidity", provider, amtA, amtB, minLP, return)
 //    pair!("removeLiquidity", provider, lpAmount, minA, minB, return)
-//    pair!("swap", caller, amountIn, tokenInUri, minAmountOut, to, return)
-//    pair!("getAmountOut", amountIn, tokenInUri, return) -> Int
+//    pair!("swap", trader, amountIn, tokenIn, minOut, to, return)
 // ============================================================
 
 new
   pairContract,
-  // State channels
-  reserveACh,       // current reserve of token A
-  reserveBCh,       // current reserve of token B
-  lpSupplyCh,       // total LP tokens minted
-  lpBalances,       // LP balance map per address
-  // Token lookup channels (filled at init)
+  reserveACh,
+  reserveBCh,
+  lpSupplyCh,
+  lpBalances,
   tokenACh,
   tokenBCh,
-  // Registry
   insertArbitrary(`rho:registry:insertArbitrary`),
   lookup(`rho:registry:lookup`),
   uriOut,
   stdout(`rho:io:stdout`),
-  // Math utilities
   _sqrt
 in {
 
-  // ---- Integer square root (Babylonian method approximation) ----
-  // Used for initial LP minting: LP = sqrt(amtA * amtB)
   contract _sqrt(@n, return) = {
     if (n == 0) { return!(0) }
     else {
       new iterCh in {
         contract iterCh(@x) = {
           new x1Ch in {
-            new divCh in {
-              // x1 = (x + n/x) / 2
-              // Rholang integer division via subtraction loop not native,
-              // we use the built-in / operator (integer division)
-              x1Ch!((x + n / x) / 2) |
-              for (@x1 <- x1Ch) {
-                if (x1 >= x) { return!(x) }
-                else { iterCh!(x1) }
-              }
+            x1Ch!((x + n / x) / 2) |
+            for (@x1 <- x1Ch) {
+              if (x1 >= x) { return!(x) }
+              else { iterCh!(x1) }
             }
           }
         } |
@@ -62,105 +48,98 @@ in {
     }
   } |
 
-  // ---- Helper: absolute difference ----
-  new _abs in {
-    contract _abs(@a, @b, return) = {
-      if (a >= b) { return!(a - b) } else { return!(b - a) }
-    } |
+  reserveACh!(0) |
+  reserveBCh!(0) |
+  lpSupplyCh!(0) |
+  lpBalances!({}) |
 
-    // ---- Initialize state ----
-    reserveACh!(0) |
-    reserveBCh!(0) |
-    lpSupplyCh!(0) |
-    lpBalances!({}) |
+  lookup!(`TOKEN_A_URI`, *tokenACh) |
+  lookup!(`TOKEN_B_URI`, *tokenBCh) |
 
-    // ---- Lookup token contracts from registry ----
-    // !! Replace these URIs with your deployed token URIs !!
-    lookup!(`TOKEN_A_URI`, *tokenACh) |
-    lookup!(`TOKEN_B_URI`, *tokenBCh) |
+  contract pairContract(@"getTokens", return) = {
+    return!(("TOKEN_A_URI", "TOKEN_B_URI"))
+  } |
 
-    // ---- getTokens ----
-    contract pairContract(@"getTokens", return) = {
-      return!(("TOKEN_A_URI", "TOKEN_B_URI"))
-    } |
+  contract pairContract(@"getPoolSpender", return) = {
+    return!("PAIR_POOL_ADDR")
+  } |
 
-    // ---- getReserves ----
-    contract pairContract(@"getReserves", return) = {
-      for (@rA <- reserveACh) {
-        for (@rB <- reserveBCh) {
-          reserveACh!(rA) |
-          reserveBCh!(rB) |
-          return!((rA, rB))
-        }
+  contract pairContract(@"getReserves", return) = {
+    for (@rA <- reserveACh) {
+      for (@rB <- reserveBCh) {
+        reserveACh!(rA) |
+        reserveBCh!(rB) |
+        return!((rA, rB))
       }
-    } |
+    }
+  } |
 
-    // ---- getLPBalance ----
-    contract pairContract(@"getLPBalance", @addr, return) = {
-      for (@lpMap <- lpBalances) {
-        lpBalances!(lpMap) |
-        match lpMap.get(addr) {
-          Nil => return!(0)
-          bal => return!(bal)
-        }
+  contract pairContract(@"getLPBalance", @addr, return) = {
+    for (@lpMap <- lpBalances) {
+      lpBalances!(lpMap) |
+      match lpMap.get(addr) {
+        Nil => return!(0)
+        bal => return!(bal)
       }
-    } |
+    }
+  } |
 
-    // ---- getLPSupply ----
-    contract pairContract(@"getLPSupply", return) = {
-      for (@supply <- lpSupplyCh) {
-        lpSupplyCh!(supply) |
-        return!(supply)
-      }
-    } |
+  contract pairContract(@"getLPSupply", return) = {
+    for (@supply <- lpSupplyCh) {
+      lpSupplyCh!(supply) |
+      return!(supply)
+    }
+  } |
 
-    // ---- getAmountOut (pure calculation, no state change) ----
-    // Uniswap V2 formula with 0.3% fee:
-    // amountOut = (amountIn * 997 * reserveOut) / (reserveIn * 1000 + amountIn * 997)
-    contract pairContract(@"getAmountOut", @amountIn, @tokenInUri, return) = {
-      for (@rA <- reserveACh) {
-        for (@rB <- reserveBCh) {
-          reserveACh!(rA) |
-          reserveBCh!(rB) |
-          if (amountIn <= 0 or rA <= 0 or rB <= 0) {
-            return!((false, 0, "Invalid input or empty pool"))
-          } else {
-            new amountInWithFee, reserveIn, reserveOut in {
-              if (tokenInUri == "TOKEN_A_URI") {
-                amountInWithFee!(amountIn * 997) |
-                reserveIn!(rA) |
-                reserveOut!(rB)
-              } else {
-                amountInWithFee!(amountIn * 997) |
-                reserveIn!(rB) |
-                reserveOut!(rA)
-              } |
-              for (@fee <- amountInWithFee) {
-                for (@rIn <- reserveIn) {
-                  for (@rOut <- reserveOut) {
-                    new numerator, denominator in {
-                      numerator!(fee * rOut) |
-                      denominator!(rIn * 1000 + fee) |
-                      for (@num <- numerator) {
-                        for (@den <- denominator) {
-                          return!((true, num / den, "OK"))
-                        }
-                      }
-                    }
+  contract pairContract(@"getAmountOut", @amountIn, @tokenInUri, return) = {
+    for (@rA <- reserveACh) {
+      for (@rB <- reserveBCh) {
+        reserveACh!(rA) |
+        reserveBCh!(rB) |
+
+        if (amountIn <= 0 or rA <= 0 or rB <= 0) {
+          return!((false, 0, "Invalid input or empty pool"))
+        } else {
+          if (tokenInUri == "TOKEN_A_URI") {
+            new fee, num, den in {
+              fee!(amountIn * 997) |
+              for (@f <- fee) {
+                num!(f * rB) |
+                den!(rA * 1000 + f) |
+                for (@n <- num) {
+                  for (@d <- den) {
+                    return!((true, n / d, "OK"))
                   }
                 }
               }
             }
+          } else {
+            if (tokenInUri == "TOKEN_B_URI") {
+              new fee, num, den in {
+                fee!(amountIn * 997) |
+                for (@f <- fee) {
+                  num!(f * rA) |
+                  den!(rB * 1000 + f) |
+                  for (@n <- num) {
+                    for (@d <- den) {
+                      return!((true, n / d, "OK"))
+                    }
+                  }
+                }
+              }
+            } else {
+              return!((false, 0, "Unsupported tokenIn"))
+            }
           }
         }
       }
-    } |
+    }
+  } |
 
-    // ---- addLiquidity ----
-    // Transfers tokens FROM provider TO this contract's address,
-    // mints LP tokens proportionally.
-    // Note: caller must have approved this contract first via token.approve()
-    contract pairContract(@"addLiquidity", @provider, @amtA, @amtB, @minLP, return) = {
+  contract pairContract(@"addLiquidity", @provider, @amtA, @amtB, @minLP, return) = {
+    if (amtA <= 0 or amtB <= 0) {
+      return!((false, "Invalid amounts"))
+    } else {
       for (@rA <- reserveACh) {
         for (@rB <- reserveBCh) {
           for (@supply <- lpSupplyCh) {
@@ -171,9 +150,7 @@ in {
                   tokenBCh!(*tokenB) |
 
                   new lpToMint in {
-                    // Calculate LP tokens to mint
                     if (supply == 0) {
-                      // First deposit: LP = sqrt(amtA * amtB) - MINIMUM_LIQUIDITY(1000)
                       new sqrtCh in {
                         _sqrt!(amtA * amtB, *sqrtCh) |
                         for (@sq <- sqrtCh) {
@@ -189,14 +166,13 @@ in {
                         }
                       }
                     } else {
-                      // Subsequent deposits: LP = min(amtA/rA, amtB/rB) * supply
                       new lpACh, lpBCh in {
                         lpACh!(amtA * supply / rA) |
                         lpBCh!(amtB * supply / rB) |
                         for (@lpA <- lpACh) {
                           for (@lpB <- lpBCh) {
                             if (lpA <= lpB) { lpToMint!(lpA) }
-                            else            { lpToMint!(lpB) }
+                            else { lpToMint!(lpB) }
                           }
                         }
                       }
@@ -211,9 +187,8 @@ in {
                       lpBalances!(lpMap) |
                       return!((false, "Slippage: LP below minimum"))
                     } else {
-                      // Transfer tokens from provider to pool (pool address = "PAIR_POOL_ADDR")
                       new txACh, txBCh in {
-                        tokenA!("transferFrom", provider, "PAIR_POOL_ADDR", amtA, *txACh) |
+                        tokenA!("transferFrom", "PAIR_POOL_ADDR", provider, "PAIR_POOL_ADDR", amtA, *txACh) |
                         for (@resA <- txACh) {
                           match resA {
                             (false, msg) => {
@@ -224,7 +199,7 @@ in {
                               return!((false, msg))
                             }
                             (true, _) => {
-                              tokenB!("transferFrom", provider, "PAIR_POOL_ADDR", amtB, *txBCh) |
+                              tokenB!("transferFrom", "PAIR_POOL_ADDR", provider, "PAIR_POOL_ADDR", amtB, *txBCh) |
                               for (@resB <- txBCh) {
                                 match resB {
                                   (false, msg) => {
@@ -235,7 +210,6 @@ in {
                                     return!((false, msg))
                                   }
                                   (true, _) => {
-                                    // Update reserves and mint LP
                                     reserveACh!(rA + amtA) |
                                     reserveBCh!(rB + amtB) |
                                     lpSupplyCh!(supply + lp) |
@@ -261,10 +235,13 @@ in {
           }
         }
       }
-    } |
+    }
+  } |
 
-    // ---- removeLiquidity ----
-    contract pairContract(@"removeLiquidity", @provider, @lpAmount, @minA, @minB, return) = {
+  contract pairContract(@"removeLiquidity", @provider, @lpAmount, @minA, @minB, return) = {
+    if (lpAmount <= 0) {
+      return!((false, "Invalid LP amount"))
+    } else {
       for (@rA <- reserveACh) {
         for (@rB <- reserveBCh) {
           for (@supply <- lpSupplyCh) {
@@ -286,7 +263,6 @@ in {
                         lpSupplyCh!(supply) | lpBalances!(lpMap) |
                         return!((false, "Insufficient LP balance"))
                       } else {
-                        // amtOut = lpAmount / supply * reserve
                         new amtACh, amtBCh in {
                           amtACh!(lpAmount * rA / supply) |
                           amtBCh!(lpAmount * rB / supply) |
@@ -297,17 +273,34 @@ in {
                                 lpSupplyCh!(supply) | lpBalances!(lpMap) |
                                 return!((false, "Slippage: output below minimum"))
                               } else {
-                                // Send tokens back to provider
                                 new txACh, txBCh in {
                                   tokenA!("transfer", "PAIR_POOL_ADDR", provider, outA, *txACh) |
-                                  tokenB!("transfer", "PAIR_POOL_ADDR", provider, outB, *txBCh) |
-                                  for (_ <- txACh) {
-                                    for (_ <- txBCh) {
-                                      reserveACh!(rA - outA) |
-                                      reserveBCh!(rB - outB) |
-                                      lpSupplyCh!(supply - lpAmount) |
-                                      lpBalances!(lpMap.set(provider, bal - lpAmount)) |
-                                      return!((true, outA, outB, "Liquidity removed"))
+                                  for (@resA <- txACh) {
+                                    match resA {
+                                      (false, msgA) => {
+                                        reserveACh!(rA) | reserveBCh!(rB) |
+                                        lpSupplyCh!(supply) | lpBalances!(lpMap) |
+                                        return!((false, msgA))
+                                      }
+                                      (true, _) => {
+                                        tokenB!("transfer", "PAIR_POOL_ADDR", provider, outB, *txBCh) |
+                                        for (@resB <- txBCh) {
+                                          match resB {
+                                            (false, msgB) => {
+                                              reserveACh!(rA) | reserveBCh!(rB) |
+                                              lpSupplyCh!(supply) | lpBalances!(lpMap) |
+                                              return!((false, msgB))
+                                            }
+                                            (true, _) => {
+                                              reserveACh!(rA - outA) |
+                                              reserveBCh!(rB - outB) |
+                                              lpSupplyCh!(supply - lpAmount) |
+                                              lpBalances!(lpMap.set(provider, bal - lpAmount)) |
+                                              return!((true, outA, outB, "Liquidity removed"))
+                                            }
+                                          }
+                                        }
+                                      }
                                     }
                                   }
                                 }
@@ -324,10 +317,13 @@ in {
           }
         }
       }
-    } |
+    }
+  } |
 
-    // ---- swap ----
-    contract pairContract(@"swap", @caller, @amountIn, @tokenInUri, @minAmountOut, @to, return) = {
+  contract pairContract(@"swap", @trader, @amountIn, @tokenInUri, @minAmountOut, @to, return) = {
+    if (amountIn <= 0) {
+      return!((false, 0, "Invalid input amount"))
+    } else {
       for (@rA <- reserveACh) {
         for (@rB <- reserveBCh) {
           for (tokenA <- tokenACh) {
@@ -335,65 +331,78 @@ in {
               tokenACh!(*tokenA) |
               tokenBCh!(*tokenB) |
 
-              if (amountIn <= 0) {
-                reserveACh!(rA) | reserveBCh!(rB) |
-                return!((false, 0, "Invalid input amount"))
-              } else {
-                // Calculate output
-                new calcCh in {
-                  new amountInFee in {
-                    amountInFee!(amountIn * 997) |
-                    for (@fee <- amountInFee) {
-                      new numCh, denCh in {
-                        if (tokenInUri == "TOKEN_A_URI") {
-                          numCh!(fee * rB) |
-                          denCh!(rA * 1000 + fee)
-                        } else {
-                          numCh!(fee * rA) |
-                          denCh!(rB * 1000 + fee)
-                        } |
-                        for (@num <- numCh) {
-                          for (@den <- denCh) {
-                            calcCh!(num / den)
-                          }
-                        }
+              new isAInCh in {
+                if (tokenInUri == "TOKEN_A_URI") { isAInCh!(true) }
+                else {
+                  if (tokenInUri == "TOKEN_B_URI") { isAInCh!(false) }
+                  else { isAInCh!(Nil) }
+                }
+              } |
+
+              for (@isAIn <- isAInCh) {
+                match isAIn {
+                  Nil => {
+                    reserveACh!(rA) | reserveBCh!(rB) |
+                    return!((false, 0, "Unsupported tokenIn"))
+                  }
+                  _ => {
+                    new outCh in {
+                      if (isAIn == true) {
+                        outCh!((amountIn * 997 * rB) / (rA * 1000 + amountIn * 997))
+                      } else {
+                        outCh!((amountIn * 997 * rA) / (rB * 1000 + amountIn * 997))
                       }
-                    }
-                  } |
-                  for (@amountOut <- calcCh) {
-                    if (amountOut < minAmountOut) {
-                      reserveACh!(rA) | reserveBCh!(rB) |
-                      return!((false, 0, "Slippage: output below minimum"))
-                    } else {
-                      // Transfer tokenIn from caller to pool
-                      new txInCh in {
-                        if (tokenInUri == "TOKEN_A_URI") {
-                          tokenA!("transferFrom", caller, "PAIR_POOL_ADDR", amountIn, *txInCh)
+                    } |
+
+                    for (@amountOut <- outCh) {
+                      if (amountOut < minAmountOut) {
+                        reserveACh!(rA) | reserveBCh!(rB) |
+                        return!((false, 0, "Slippage: output below minimum"))
+                      } else {
+                        if ((isAIn == true and amountOut >= rB) or (isAIn == false and amountOut >= rA)) {
+                          reserveACh!(rA) | reserveBCh!(rB) |
+                          return!((false, 0, "Insufficient liquidity"))
                         } else {
-                          tokenB!("transferFrom", caller, "PAIR_POOL_ADDR", amountIn, *txInCh)
-                        } |
-                        for (@txIn <- txInCh) {
-                          match txIn {
-                            (false, msg) => {
-                              reserveACh!(rA) | reserveBCh!(rB) |
-                              return!((false, 0, msg))
+                          new txInCh in {
+                            if (isAIn == true) {
+                              tokenA!("transferFrom", "PAIR_POOL_ADDR", trader, "PAIR_POOL_ADDR", amountIn, *txInCh)
+                            } else {
+                              tokenB!("transferFrom", "PAIR_POOL_ADDR", trader, "PAIR_POOL_ADDR", amountIn, *txInCh)
                             }
-                            (true, _) => {
-                              // Transfer tokenOut from pool to recipient
-                              new txOutCh in {
-                                if (tokenInUri == "TOKEN_A_URI") {
-                                  tokenB!("transfer", "PAIR_POOL_ADDR", to, amountOut, *txOutCh) |
-                                  for (_ <- txOutCh) {
-                                    reserveACh!(rA + amountIn) |
-                                    reserveBCh!(rB - amountOut) |
-                                    return!((true, amountOut, "Swap OK"))
+                          } |
+
+                          for (@txIn <- txInCh) {
+                            match txIn {
+                              (false, msg) => {
+                                reserveACh!(rA) | reserveBCh!(rB) |
+                                return!((false, 0, msg))
+                              }
+                              (true, _) => {
+                                new txOutCh in {
+                                  if (isAIn == true) {
+                                    tokenB!("transfer", "PAIR_POOL_ADDR", to, amountOut, *txOutCh)
+                                  } else {
+                                    tokenA!("transfer", "PAIR_POOL_ADDR", to, amountOut, *txOutCh)
                                   }
-                                } else {
-                                  tokenA!("transfer", "PAIR_POOL_ADDR", to, amountOut, *txOutCh) |
-                                  for (_ <- txOutCh) {
-                                    reserveACh!(rA - amountOut) |
-                                    reserveBCh!(rB + amountIn) |
-                                    return!((true, amountOut, "Swap OK"))
+                                } |
+
+                                for (@txOut <- txOutCh) {
+                                  match txOut {
+                                    (false, msgOut) => {
+                                      reserveACh!(rA) | reserveBCh!(rB) |
+                                      return!((false, 0, msgOut))
+                                    }
+                                    (true, _) => {
+                                      if (isAIn == true) {
+                                        reserveACh!(rA + amountIn) |
+                                        reserveBCh!(rB - amountOut) |
+                                        return!((true, amountOut, "Swap OK"))
+                                      } else {
+                                        reserveACh!(rA - amountOut) |
+                                        reserveBCh!(rB + amountIn) |
+                                        return!((true, amountOut, "Swap OK"))
+                                      }
+                                    }
                                   }
                                 }
                               }
@@ -410,15 +419,10 @@ in {
         }
       }
     }
+  } |
 
-  } // end _abs block
-
-  |
-
-  // ---- Register and print URI ----
   insertArbitrary!(*pairContract, *uriOut) |
   for (@uri <- uriOut) {
     stdout!(["Pair deployed at URI:", uri])
-    // Save this URI for the Factory and Router!
   }
 }
