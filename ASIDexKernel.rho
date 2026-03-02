@@ -139,16 +139,16 @@ in {
                     fromBal => {
                       if (fromBal < amount) { tokenAState!(st) | return!((false, "Insufficient balance")) }
                       else {
-                        new nextAllow in {
-                          if (caller == from) { nextAllow!(allow) }
+                        new nextAllowA in {
+                          if (caller == from) { nextAllowA!(allow) }
                           else {
                             match allow.get((from, caller)) {
-                              Nil => nextAllow!(allow)
-                              a => nextAllow!(allow.set((from, caller), a - amount))
+                              Nil => nextAllowA!(allow)
+                              a => nextAllowA!(allow.set((from, caller), a - amount))
                             }
                           }
                         } |
-                        for (@na <- nextAllow) {
+                        for (@na <- nextAllowA) {
                           tokenAState!(
                             st
                               .set("balances", bal.set(from, fromBal - amount).set(to, match bal.get(to) { Nil => amount v => v + amount }))
@@ -287,16 +287,16 @@ in {
                     fromBal => {
                       if (fromBal < amount) { tokenBState!(st) | return!((false, "Insufficient balance")) }
                       else {
-                        new nextAllow in {
-                          if (caller == from) { nextAllow!(allow) }
+                        new nextAllowB in {
+                          if (caller == from) { nextAllowB!(allow) }
                           else {
                             match allow.get((from, caller)) {
-                              Nil => nextAllow!(allow)
-                              a => nextAllow!(allow.set((from, caller), a - amount))
+                              Nil => nextAllowB!(allow)
+                              a => nextAllowB!(allow.set((from, caller), a - amount))
                             }
                           }
                         } |
-                        for (@na <- nextAllow) {
+                        for (@na <- nextAllowB) {
                           tokenBState!(
                             st
                               .set("balances", bal.set(from, fromBal - amount).set(to, match bal.get(to) { Nil => amount v => v + amount }))
