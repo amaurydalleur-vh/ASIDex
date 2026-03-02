@@ -672,16 +672,14 @@ function priceImpact(amtIn, rIn, rOut) {
 
 // ---- Explore deploy (read-only RNode query) ----
 async function explore(term) {
-  try {
-    const r = await fetch(RNODE.EXPLORE, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ term }),
-    });
-    if (!r.ok) throw new Error(`explore HTTP ${r.status}`);
-    const data = await r.json();
-    return data.expr?.[0] ?? null;
-  } catch { return null; }
+  const r = await fetch(RNODE.EXPLORE, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ term }),
+  });
+  if (!r.ok) throw new Error(`RNode HTTP ${r.status}: ${await r.text().catch(() => '')}`);
+  const data = await r.json();
+  return data.expr?.[0] ?? null;
 }
 
 function findExprInts(node, out = []) {
@@ -780,22 +778,27 @@ async function fetchPoolSpender() {
 }
 
 async function refreshOnchain() {
-  const pool = await fetchPoolData();
-  state.pool = { ...pool, userLP: 0, spender: CONFIG.POOL_SPENDER };
-  if (state.wallet && hasKernelConfigured()) {
-    const [b0, b1, lp, spender] = await Promise.all([
-      fetchTokenBalance(CHANNELS.TOKEN_A, state.wallet),
-      fetchTokenBalance(CHANNELS.TOKEN_B, state.wallet),
-      fetchLPBalance(state.wallet),
-      fetchPoolSpender(),
-    ]);
-    state.balances = { 0: b0, 1: b1 };
-    state.pool.userLP = lp;
-    state.pool.spender = spender || CONFIG.POOL_SPENDER;
-  } else {
-    state.balances = { 0: 0, 1: 0 };
+  try {
+    const pool = await fetchPoolData();
+    state.pool = { ...pool, userLP: 0, spender: CONFIG.POOL_SPENDER };
+    if (state.wallet && hasKernelConfigured()) {
+      const [b0, b1, lp, spender] = await Promise.all([
+        fetchTokenBalance(CHANNELS.TOKEN_A, state.wallet),
+        fetchTokenBalance(CHANNELS.TOKEN_B, state.wallet),
+        fetchLPBalance(state.wallet),
+        fetchPoolSpender(),
+      ]);
+      state.balances = { 0: b0, 1: b1 };
+      state.pool.userLP = lp;
+      state.pool.spender = spender || CONFIG.POOL_SPENDER;
+    } else {
+      state.balances = { 0: 0, 1: 0 };
+    }
+    render();
+  } catch (e) {
+    showToast("Refresh failed: " + e.message, "error", 8000);
+    render();
   }
-  render();
 }
 
 async function deployWithWalletOrFallback(term) {
