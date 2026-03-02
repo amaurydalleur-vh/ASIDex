@@ -660,17 +660,7 @@ function shortAddr(a) {
 function hasKernelConfigured() {
   return !!CONFIG.NAMESPACE && CONFIG.NAMESPACE.length > 0;
 }
-function openUriConfig() {
-  const ns = prompt("Kernel namespace (same as ASIDexKernel.rho)", CONFIG.NAMESPACE);
-  if (ns == null || ns.trim() === "") return;
-  const spenderDefault = `asidex:pair:${ns.trim()}`;
-  const spender = prompt("Pool spender string", CONFIG.POOL_SPENDER || spenderDefault);
-  if (spender == null || spender.trim() === "") return;
-  saveConfig({ NAMESPACE: ns.trim(), POOL_SPENDER: spender.trim() });
-  CHANNELS = getChannels();
-  showToast("Kernel namespace updated.", "success");
-  refreshOnchain();
-}
+
 function priceImpact(amtIn, rIn, rOut) {
   if (!rIn || !rOut || !amtIn) return 0;
   const fee = amtIn * 997;
@@ -743,23 +733,22 @@ function calcAmountOut(amtIn, rIn, rOut) {
 }
 
 // ---- Wallet connection ----
+// wallet.dev.asichain.io is a web wallet (no JS injection). We ask for the address manually.
 async function connectWallet() {
-  if (!window.fetchBrowserWallet) {
-    showToast("Please install the ASI Alliance Wallet extension", "error");
+  if (state.wallet) {
+    // Already connected — allow disconnect
+    state.wallet = null;
+    state.balances = { 0: 0, 1: 0 };
+    state.pool.userLP = 0;
+    render();
     return;
   }
-  try {
-    await window.fetchBrowserWallet.wallet.enable(RNODE.CHAIN_ID);
-    const accounts = await window.fetchBrowserWallet.wallet.getAccounts?.() ?? [];
-    if (accounts.length > 0) {
-      state.wallet = accounts[0].address;
-      showToast("Wallet connected: " + shortAddr(state.wallet), "success");
-      render();
-      await refreshOnchain();
-    }
-  } catch (e) {
-    showToast("Connection failed: " + e.message, "error");
-  }
+  const addr = prompt("Enter your ASI wallet address:");
+  if (!addr || !addr.trim()) return;
+  state.wallet = addr.trim();
+  showToast("Wallet set: " + shortAddr(state.wallet), "success");
+  render();
+  await refreshOnchain();
 }
 
 async function fetchTokenBalance(tokenUri, wallet) {
@@ -812,37 +801,10 @@ async function refreshOnchain() {
 }
 
 async function deployWithWalletOrFallback(term) {
-  const wbw = window.fetchBrowserWallet;
-  if (!wbw) {
-    await navigator.clipboard.writeText(term);
-    window.open(RNODE.IDE_URL, "_blank", "noopener");
-    throw new Error("Wallet extension not detected. Rholang copied for wallet IDE deploy.");
-  }
-  const signer = wbw.rholang?.signDeploy;
-  if (!signer) {
-    await navigator.clipboard.writeText(term);
-    window.open(RNODE.IDE_URL, "_blank", "noopener");
-    throw new Error("Wallet deploy API unavailable. Rholang copied for wallet IDE deploy.");
-  }
-  const payload = {
-    term,
-    timestamp: Date.now(),
-    phloPrice: 1,
-    phloLimit: 1000000,
-    validAfterBlockNumber: -1,
-  };
-  const signed = await signer(payload);
-  const resp = await fetch(RNODE.DEPLOY, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      ...payload,
-      sig: signed?.signature,
-      deployer: signed?.pub_key,
-    }),
-  });
-  if (!resp.ok) throw new Error(`Deploy failed ${resp.status}`);
-  return await resp.json();
+  // wallet.dev.asichain.io is a web wallet — copy term to clipboard and open IDE
+  await navigator.clipboard.writeText(term);
+  window.open(RNODE.IDE_URL, "_blank", "noopener");
+  throw new Error("Rholang term copied to clipboard — paste it in the wallet IDE and click Deploy.");
 }
 
 // ---- Toast ----
@@ -1069,9 +1031,6 @@ function render() {
       <button class="wallet-btn ${state.wallet?'connected':''}" onclick="connectWallet()">
         ${state.wallet ? "● " + shortAddr(state.wallet) : "Connect Wallet"}
       </button>
-      <button class="wallet-btn" onclick="openUriConfig()" style="border-color: var(--yellow); color: var(--yellow)">
-        Configure Namespace
-      </button>
     </div>
   </header>
 
@@ -1153,6 +1112,11 @@ function renderSwap(tkIn, tkOut, outAmt, impact, priceAB, priceBA) {
           <button class="slippage-btn ${state.slippage === s ? 'active' : ''}" onclick="setState('slippage', ${s})">${s}%</button>
         `).join('')}
         <input class="slippage-custom" type="number" placeholder="Custom" value="${![0.1,0.5,1.0].includes(state.slippage)?state.slippage:''}" oninput="setState('slippage', parseFloat(this.value)||0.5)" />
+      </div>
+
+      <div style="display:flex;justify-content:space-between;padding:10px 0 4px;font-size:0.78rem;font-family:'Space Mono',monospace;color:var(--muted)">
+        <span>1 TKNA = <span style="color:var(--accent)">${priceAB} TKNB</span></span>
+        <span>1 TKNB = <span style="color:var(--accent)">${priceBA} TKNA</span></span>
       </div>
 
       ${impact > 5 ? `<div class="impact-warning">⚠ High price impact: ${impact.toFixed(2)}%. Consider smaller trade size.</div>` : ''}
@@ -1338,7 +1302,7 @@ function renderLiquidity(liqBCalc, userLPShare, userReserveA, userReserveB) {
 function renderMint() {
   const recipient = state.mintRecipient || state.wallet || "";
   return `
-  <div class="two-col">
+  <div style="max-width:520px;margin:0 auto">
     <div class="card">
       <div class="card-title"><div class="dot" style="background:var(--yellow)"></div>Dev Faucet — Mint Test Tokens</div>
       <p style="font-size:0.8rem;color:var(--muted);margin-bottom:16px;">
@@ -1356,7 +1320,7 @@ function renderMint() {
         </div>
       </div>
 
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:16px;">
+      <div style="display:flex;flex-direction:column;gap:12px;margin-top:16px;">
         <div>
           <div class="token-input-wrap">
             <div class="token-input-label">TKNA Amount</div>
@@ -1391,37 +1355,6 @@ function renderMint() {
           </button>
         </div>
       </div>
-    </div>
-
-    <div class="card">
-      <div class="card-title"><div class="dot" style="background:var(--yellow)"></div>Deployment Info</div>
-      <div class="info-row">
-        <span class="label">Namespace</span>
-        <span class="value text-accent" style="font-family:'Space Mono',monospace">${CONFIG.NAMESPACE || '—'}</span>
-      </div>
-      <div class="info-row">
-        <span class="label">Pool Spender</span>
-        <span class="value" style="font-family:'Space Mono',monospace;font-size:0.75rem">${CONFIG.POOL_SPENDER || '—'}</span>
-      </div>
-      <div class="info-row">
-        <span class="label">Token A Channel</span>
-        <span class="value" style="font-family:'Space Mono',monospace;font-size:0.7rem">asidex:tokenA:${CONFIG.NAMESPACE}</span>
-      </div>
-      <div class="info-row">
-        <span class="label">Token B Channel</span>
-        <span class="value" style="font-family:'Space Mono',monospace;font-size:0.7rem">asidex:tokenB:${CONFIG.NAMESPACE}</span>
-      </div>
-      <div class="info-row">
-        <span class="label">Pair Channel</span>
-        <span class="value" style="font-family:'Space Mono',monospace;font-size:0.7rem">asidex:pair:${CONFIG.NAMESPACE}</span>
-      </div>
-      <hr class="divider" />
-      <div class="card-title"><div class="dot" style="background:var(--yellow)"></div>Debug State</div>
-      <button class="action-btn" onclick="fetchDebugState()"
-        style="background:var(--surface);border:1px solid var(--border);color:var(--muted);margin-bottom:10px">
-        Query debugState
-      </button>
-      <pre id="debug-out" style="font-family:'Space Mono',monospace;font-size:0.7rem;color:var(--muted);white-space:pre-wrap;background:var(--panel);padding:10px;border-radius:8px;margin:0">${state.debugOut || 'Click to fetch...'}</pre>
     </div>
   </div>
   `;
@@ -1520,7 +1453,6 @@ window.flipTokens    = () => {
   render();
 };
 window.connectWallet = connectWallet;
-window.openUriConfig = openUriConfig;
 window.doSwap            = doSwap;
 window.doAddLiquidity    = doAddLiquidity;
 window.doRemoveLiquidity = doRemoveLiquidity;
@@ -1532,12 +1464,6 @@ window.state            = state;
 // ---- Boot ----
 (async () => {
   await refreshOnchain();
-  if (!hasKernelConfigured()) {
-    showToast("Configure kernel namespace to query live Devnet data.", "info");
-    setTimeout(() => {
-      if (confirm("No kernel namespace configured yet. Configure now?")) openUriConfig();
-    }, 300);
-  }
   render();
 })();
 </script>
