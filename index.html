@@ -733,16 +733,30 @@ function calcAmountOut(amtIn, rIn, rOut) {
 }
 
 // ---- Wallet connection ----
-// wallet.dev.asichain.io is a web wallet (no JS injection). We ask for the address manually.
 async function connectWallet() {
   if (state.wallet) {
-    // Already connected — allow disconnect
     state.wallet = null;
     state.balances = { 0: 0, 1: 0 };
     state.pool.userLP = 0;
     render();
     return;
   }
+  // Try ASI Alliance browser extension first
+  const wbw = window.fetchBrowserWallet;
+  if (wbw) {
+    try {
+      await wbw.wallet.enable(RNODE.CHAIN_ID);
+      const accounts = await wbw.wallet.getAccounts?.() ?? [];
+      if (accounts.length > 0) {
+        state.wallet = accounts[0].address;
+        showToast("Wallet connected: " + shortAddr(state.wallet), "success");
+        render();
+        await refreshOnchain();
+        return;
+      }
+    } catch (e) { /* fall through */ }
+  }
+  // Fallback: manual address entry
   const addr = prompt("Enter your ASI wallet address:");
   if (!addr || !addr.trim()) return;
   state.wallet = addr.trim();
@@ -801,10 +815,28 @@ async function refreshOnchain() {
 }
 
 async function deployWithWalletOrFallback(term) {
-  // wallet.dev.asichain.io is a web wallet — copy term to clipboard and open IDE
+  const wbw = window.fetchBrowserWallet;
+  // Try extension signing first
+  if (wbw?.rholang?.signDeploy) {
+    const payload = {
+      term,
+      timestamp: Date.now(),
+      phloPrice: 1,
+      phloLimit: 1000000,
+      validAfterBlockNumber: -1,
+    };
+    const signed = await wbw.rholang.signDeploy(payload);
+    const resp = await fetch(RNODE.DEPLOY, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...payload, sig: signed?.signature, deployer: signed?.pub_key }),
+    });
+    if (!resp.ok) throw new Error(`Deploy failed: ${resp.status}`);
+    return await resp.json();
+  }
+  // Fallback: copy term to clipboard (user must paste manually in wallet IDE)
   await navigator.clipboard.writeText(term);
-  window.open(RNODE.IDE_URL, "_blank", "noopener");
-  throw new Error("Rholang term copied to clipboard — paste it in the wallet IDE and click Deploy.");
+  throw new Error(`No wallet signing API found. Rholang term copied to clipboard — go to ${RNODE.IDE_URL}, paste it in Smart Contracts and click Deploy.`);
 }
 
 // ---- Toast ----
