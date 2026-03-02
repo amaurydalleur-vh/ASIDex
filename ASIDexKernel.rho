@@ -37,15 +37,22 @@ in {
   contract _sqrt(@x, return) = {
     if (x <= 0) { return!(0) }
     else {
-      new loop, out in {
-        contract loop(@z) = {
-          if (z * z <= x and (z + 1) * (z + 1) > x) { out!(z) }
+      // Binary-search integer sqrt to avoid expensive linear loops.
+      new search, out in {
+        contract search(@lo, @hi) = {
+          if (lo + 1 >= hi) { out!(lo) }
           else {
-            if (z * z > x) { loop!(z - 1) }
-            else { loop!(z + 1) }
+            new mid in {
+              mid!((lo + hi) / 2) |
+              for (@m <- mid) {
+                // Compare m <= x / m to avoid m*m overflow.
+                if (m <= x / m) { search!(m, hi) }
+                else { search!(lo, m) }
+              }
+            }
           }
         } |
-        loop!(x / 2 + 1) |
+        search!(0, x + 1) |
         for (@v <- out) { return!(v) }
       }
     }
