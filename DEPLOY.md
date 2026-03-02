@@ -1,256 +1,118 @@
 # ASI-DEX Deployment Guide
-## Full V2-style DEX on ASI:Chain DevNet
+## Quickstart — Single Kernel File, No URIs
 
----
-
-## Quickstart (No URI Workflow) - Recommended
-
-1. Open `ASIDexKernel.rho`.
-2. Replace all `ASIDEX_NS` with your namespace slug (example: `amaury-v1`).
-3. Deploy once in wallet IDE (`Deploy`, phlo ~ 1,500,000 to 2,000,000).
-4. Open `index.html`.
-5. Click `Configure Namespace` and use the same namespace.
-6. Connect wallet and start using swap/liquidity.
-
-This path does **not** require collecting `rho:id:...` URIs.
-
----
-
-## Architecture Overview
-
-```
-Token.rho (x2)  →  Pair.rho  →  Factory.rho  →  Router.rho
-                                                        ↑
-                               UI (index.html + rnode.js)
-```
-
-Each contract is deployed independently and registered in
-the RChain on-chain registry. Contracts reference each other
-via **registry URIs** (rho:id:...) rather than addresses.
+This is the only workflow needed. One deploy, one namespace, done.
 
 ---
 
 ## Prerequisites
 
-1. Install **ASI Alliance Wallet** browser extension
+1. **ASI Alliance Wallet** browser extension
    - Chrome: https://chromewebstore.google.com/detail/asi-alliance-wallet/ellkdbaphhldpeajbepobaecooaoafpg
-
-2. Get DevNet test tokens from the faucet:
-   - https://faucet.dev.asichain.io
-
-3. Open the ASI Chain Wallet IDE:
-   - https://wallet.dev.asichain.io
+2. **DevNet test FETCH** from the faucet: https://faucet.dev.asichain.io
+3. **Wallet IDE**: https://wallet.dev.asichain.io
 
 ---
 
-## Step 1 — Deploy Token A
+## Step 1 — Deploy the Kernel
 
-1. Open wallet.dev.asichain.io → Smart Contracts tab
-2. Paste the contents of `contracts/Token.rho`
-3. **Before deploying**, edit these lines:
-   ```
-   contract tokenContract(@"name", return)   = { return!("ASI-DEX Token A") }
-   contract tokenContract(@"symbol", return) = { return!("TKNA") }
-   ```
-   Change `"CHANGE_ME_SECRET_ADMIN_KEY"` to a secret string you'll remember.
-4. Set Phlo limit: **500,000**
-5. Click Deploy
-6. In the console output, find: `["Token deployed at URI:", "rho:id:XXXX..."]`
-7. **Save this URI** → this is `TOKEN_A_URI`
+1. Open `ASIDexKernel.rho`
+2. The namespace is already set to `dalleurv1`. If you want your own, replace every
+   occurrence of `dalleurv1` with your slug (e.g. `yourname-v1`).
+3. Open the Wallet IDE → Smart Contracts tab
+4. Paste the full contents of `ASIDexKernel.rho`
+5. Set Phlo limit: **2,000,000**
+6. Click **Deploy**
 
----
-
-## Step 2 — Deploy Token B
-
-Repeat Step 1 with different metadata:
-- name: `"ASI-DEX Token B"`
-- symbol: `"TKNB"`
-- Same or different admin key
-
-**Save the URI** → `TOKEN_B_URI`
+This deploys four contracts simultaneously:
+- `@"asidex:tokenA:dalleurv1"` — ERC-20 style token A (TKNA)
+- `@"asidex:tokenB:dalleurv1"` — ERC-20 style token B (TKNB)
+- `@"asidex:pair:dalleurv1"`   — AMM pool (x·y = k, 0.3% fee)
+- `@"asidex:router:dalleurv1"` — User-facing entry point
 
 ---
 
-## Step 3 — Mint Initial Tokens (for testing)
+## Step 2 — Open the UI
 
-To mint tokens to your wallet address, run this in the wallet IDE
-(replace values as needed):
+1. Open `index.html` in a browser that has the ASI Alliance Wallet extension
+2. The namespace defaults to `dalleurv1`. If you used a different slug in Step 1,
+   click **Configure Namespace** and enter your slug.
+3. Click **Connect Wallet**
 
+---
+
+## Step 3 — Mint Test Tokens
+
+1. Click the **Dev Faucet** tab in the UI
+2. Enter amounts for TKNA and TKNB (e.g. `10000`)
+3. Click **Mint TKNA** then **Mint TKNB**
+
+Each mint is a separate blockchain transaction.
+
+If the wallet doesn't support programmatic signing yet, the Rholang term is
+automatically copied to your clipboard and the IDE opens — just paste and deploy.
+
+**Manual mint (wallet IDE):**
 ```rholang
-new return, lookup(`rho:registry:lookup`) in {
-  lookup!(`TOKEN_A_URI_HERE`, *return) |
-  for (token <- return) {
-    new mintCh, adminKeyCh in {
-      adminKeyCh!("YOUR_ADMIN_KEY") |
-      token!("mint", "YOUR_WALLET_ADDRESS", 1000000000000000000000, *adminKeyCh, *mintCh) |
-      for (@res <- mintCh) { return!(res) }
-    }
-  }
+new ret, adminKeyCh, mintCh in {
+  adminKeyCh!("ASIDEX_ADMIN_2026_Mc7vQ9rL2xP4nT8kW1sZ5dH3yB6uJ0fR") |
+  @"asidex:tokenA:dalleurv1"!("mint", "YOUR_WALLET_ADDRESS", 10000000000000000000000, *adminKeyCh, *mintCh) |
+  for (@res <- mintCh) { ret!(res) }
 }
 ```
-
-Run the same for Token B.
-
----
-
-## Step 4 — Deploy Pair Contract
-
-1. Open `contracts/Pair.rho`
-2. Replace ALL occurrences of `TOKEN_A_URI` with your actual Token A URI
-3. Replace ALL occurrences of `TOKEN_B_URI` with your actual Token B URI
-4. Replace `PAIR_POOL_ADDR` with the canonical pool spender string used for approvals
-   (for DevNet PoC this is often your wallet address, but it must be consistent
-   between Pair deploy and UI configuration)
-5. Deploy with Phlo limit: **1,000,000**
-6. **Save the URI** → `PAIR_URI`
+Run the same replacing `tokenA` with `tokenB` for TKNB.
 
 ---
 
-## Step 5 — Deploy Factory Contract
+## Step 4 — Add Initial Liquidity
 
-1. Open `contracts/Factory.rho`
-2. Replace `"FACTORY_ADMIN_SECRET"` with your admin key
-3. Deploy with Phlo limit: **500,000**
-4. **Save the URI** → `FACTORY_URI`
+1. Click the **Liquidity** tab → **Add Liquidity**
+2. Enter Token A amount (Token B is auto-calculated once there is an existing ratio)
+3. Click **Add Liquidity & Mint LP Tokens**
 
----
-
-## Step 6 — Register the Pair in Factory
-
-Run this in the wallet IDE:
-
-```rholang
-new return, lookup(`rho:registry:lookup`) in {
-  lookup!(`FACTORY_URI_HERE`, *return) |
-  for (factory <- return) {
-    new regCh, adminKeyCh in {
-      adminKeyCh!("FACTORY_ADMIN_SECRET") |
-      factory!(
-        "registerPair",
-        "TOKEN_A_URI_HERE",
-        "TOKEN_B_URI_HERE",
-        "PAIR_URI_HERE",
-        *adminKeyCh,
-        *regCh
-      ) |
-      for (@res <- regCh) { return!(res) }
-    }
-  }
-}
-```
-
-Expected response: `(true, "Pair registered", "PAIR_URI")`
+This sends three transactions: approve TKNA, approve TKNB, then addLiquidity.
+Each requires wallet signature.
 
 ---
 
-## Step 7 — Deploy Router Contract
+## Step 5 — Swap
 
-1. Open `contracts/Router.rho`
-2. Replace `FACTORY_URI` with your actual Factory URI
-3. Deploy with Phlo limit: **500,000**
-4. **Save the URI** → `ROUTER_URI`
+1. Click the **Swap** tab
+2. Enter an amount, choose direction
+3. Click **Swap**
 
----
-
-## Step 8 — Approve Tokens for the Pair Contract
-
-Before adding liquidity or swapping, approve the configured pool spender (`PAIR_POOL_ADDR`)
-to spend your tokens:
-
-```rholang
-new return, lookup(`rho:registry:lookup`) in {
-  lookup!(`TOKEN_A_URI_HERE`, *return) |
-  for (tokenA <- return) {
-    new approveCh in {
-      tokenA!(
-        "approve",
-        "YOUR_WALLET_ADDRESS",
-        "PAIR_POOL_ADDR_HERE",    // must match PAIR_POOL_ADDR used in Pair.rho
-        1000000000000000000000,   // approve large amount
-        *approveCh
-      ) |
-      for (@res <- approveCh) { return!(res) }
-    }
-  }
-}
-```
-
-Repeat for Token B.
-
----
-
-## Step 9 — Wire Up the UI
-
-1. Open `ui/src/rnode.js`
-2. Fill in the `CONTRACT_URIS` object:
-   ```js
-   export const CONTRACT_URIS = {
-     TOKEN_A: "rho:id:YOUR_TOKEN_A_URI",
-     TOKEN_B: "rho:id:YOUR_TOKEN_B_URI",
-     FACTORY: "rho:id:YOUR_FACTORY_URI",
-     ROUTER:  "rho:id:YOUR_ROUTER_URI",
-     PAIR_AB: "rho:id:YOUR_PAIR_URI",
-     POOL_SPENDER: "PAIR_POOL_ADDR_HERE",
-   };
-   ```
-
-3. Open `ui/index.html`
-4. Fill in the `URIS` object at the top of the `<script>` block
-5. Remove the mock data in `fetchPoolData()` and uncomment the
-   real `explore()` call
-
-6. Open `index.html` in a browser that has the ASI Alliance Wallet
-   extension installed.
-
----
-
-## Step 10 — Add Initial Liquidity
-
-Via the UI:
-1. Connect wallet
-2. Go to Liquidity → Add Liquidity
-3. Enter amounts for TKNA and TKNB
-4. Click "Add Liquidity & Mint LP Tokens"
-
-Or directly via wallet IDE:
-```rholang
-new return, lookup(`rho:registry:lookup`) in {
-  lookup!(`ROUTER_URI_HERE`, *return) |
-  for (router <- return) {
-    new liqCh in {
-      router!(
-        "addLiquidity",
-        "YOUR_WALLET_ADDRESS",
-        "TOKEN_A_URI_HERE",
-        "TOKEN_B_URI_HERE",
-        50000000000000000000000,   // 50,000 TKNA
-        125000000000000000000000,  // 125,000 TKNB (sets initial price 1:2.5)
-        0,                          // minLP = 0 for first deposit
-        *liqCh
-      ) |
-      for (@res <- liqCh) { return!(res) }
-    }
-  }
-}
-```
+This sends two transactions: approve token in, then swap.
 
 ---
 
 ## Verifying Deployment
 
-Query pool state at any time:
+In the **Dev Faucet** tab, click **Query debugState** to read:
+- `supplyA` / `supplyB` — total minted supply
+- `reserveA` / `reserveB` — AMM pool reserves
+- `lpSupply` — total LP tokens minted
 
+Or directly in the wallet IDE:
 ```rholang
-// Check reserves
-new return, lookup(`rho:registry:lookup`) in {
-  lookup!(`PAIR_URI_HERE`, *return) |
-  for (pair <- return) {
-    new resCh in {
-      pair!("getReserves", *resCh) |
-      for (@res <- resCh) { return!(res) }
-    }
-  }
+new ret, r in {
+  @"asidex:router:dalleurv1"!("debugState", *r) |
+  for (@res <- r) { ret!(res) }
 }
+```
+
+---
+
+## Architecture
+
+```
+ASIDexKernel.rho  (single deploy)
+  ├── tokenA  @"asidex:tokenA:dalleurv1"   ← ERC-20 style (mint/transfer/approve/transferFrom)
+  ├── tokenB  @"asidex:tokenB:dalleurv1"   ← same
+  ├── pair    @"asidex:pair:dalleurv1"      ← AMM (addLiquidity/removeLiquidity/swap)
+  └── router  @"asidex:router:dalleurv1"   ← entry point + debugState
+
+index.html   ← standalone UI (no bundler), uses inline SDK
+rnode.js     ← external SDK (import { swap, addLiquidity, ... } from "./rnode.js")
 ```
 
 ---
@@ -258,40 +120,33 @@ new return, lookup(`rho:registry:lookup`) in {
 ## Known Limitations (DevNet)
 
 | Limitation | Notes |
-|-----------|-------|
-| No CREATE opcode | Pairs must be pre-deployed and registered manually |
-| Wallet signing API | `rholang.signDeploy` may not exist yet; state-changing txs currently require manual paste into wallet IDE |
+|---|---|
+| Wallet signing API | `rholang.signDeploy` may not exist yet; UI auto-falls back to clipboard + IDE paste |
 | Integer math only | All amounts use 18-decimal integer representation (wei-style) |
-| No multi-hop routing | Router only supports direct pairs (no A→C via A→B→C) |
-| MeTTa not yet in IDE | Wallet IDE currently Rholang only; MeTTa coming soon |
+| No multi-hop routing | Direct pairs only (A → B via A→B pair, no A→C via B) |
+| No FETCH/native token pair | Only ERC-20 style internal tokens |
+| Security model | Token `transfer` uses caller string — no cryptographic proof of identity on DevNet |
+| `amaury-v1` namespace | Old deployment — missing `removeLiquidity`, do NOT use |
 
 ---
 
-## Contract URIs to Record
+## Admin Key
 
-| Contract | URI | Notes |
-|----------|-----|-------|
-| Token A  | `rho:id:...` | |
-| Token B  | `rho:id:...` | |
-| Pair A/B | `rho:id:...` | |
-| Factory  | `rho:id:...` | |
-| Router   | `rho:id:...` | |
+The admin key for minting is embedded in the deployed contract and is therefore public:
+
+```
+ASIDEX_ADMIN_2026_Mc7vQ9rL2xP4nT8kW1sZ5dH3yB6uJ0fR
+```
+
+For a production deployment you would rotate this to a fresh secret.
 
 ---
 
-## File Structure
+## Channel Reference
 
-```
-asi-dex/
-├── contracts/
-│   ├── Token.rho      ← ERC-20 equivalent fungible token
-│   ├── Pair.rho       ← AMM pool (x*y=k), LP tokens
-│   ├── Factory.rho    ← Pair registry
-│   └── Router.rho     ← User-facing swap/liquidity entry point
-├── ui/
-│   ├── index.html     ← Full DEX UI (standalone, no bundler needed)
-│   └── src/
-│       └── rnode.js   ← RNode HTTP client SDK
-└── DEPLOY.md          ← This file
-```
-
+| Channel | Methods |
+|---|---|
+| `@"asidex:tokenA:dalleurv1"` | `name`, `symbol`, `decimals`, `totalSupply`, `balanceOf`, `allowance`, `approve`, `transfer`, `transferFrom`, `mint` |
+| `@"asidex:tokenB:dalleurv1"` | same as tokenA |
+| `@"asidex:pair:dalleurv1"` | `getPoolSpender`, `getReserves`, `getLPSupply`, `getLPBalance`, `getAmountOut`, `addLiquidity`, `removeLiquidity`, `swap` |
+| `@"asidex:router:dalleurv1"` | `getAmountOut`, `swapExactTokensForTokens`, `addLiquidity`, `removeLiquidity`, `debugState` |

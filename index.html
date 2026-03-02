@@ -585,8 +585,8 @@ const RNODE = {
 };
 
 const CONFIG_DEFAULTS = {
-  NAMESPACE: "amaury-v1",
-  POOL_SPENDER: "asidex:pair:amaury-v1",
+  NAMESPACE: "dalleurv1",
+  POOL_SPENDER: "asidex:pair:dalleurv1",
 };
 const CONFIG_STORAGE_KEY = "asidex_kernel_cfg_v1";
 const CONFIG = (() => {
@@ -618,6 +618,7 @@ const TOKENS = [
 ];
 
 // ---- Mini state store ----
+const ADMIN_KEY = "ASIDEX_ADMIN_2026_Mc7vQ9rL2xP4nT8kW1sZ5dH3yB6uJ0fR";
 const state = {
   tab: "swap",
   liquidityTab: "add",
@@ -627,6 +628,8 @@ const state = {
   swapOut: { tokenIdx: 1, amount: "" },
   liqA: "", liqB: "",
   lpRemove: "",
+  mintAmtA: "", mintAmtB: "", mintRecipient: "",
+  debugOut: null,
   pool: { reserveA: 0, reserveB: 0, lpSupply: 0, userLP: 0, spender: CONFIG.POOL_SPENDER },
   balances: { 0: 0, 1: 0 },
   loading: false,
@@ -960,6 +963,35 @@ async function doAddLiquidity() {
   }
 }
 
+async function doMint(token) {
+  if (!state.wallet) { showToast("Connect your wallet first", "error"); return; }
+  if (!hasKernelConfigured()) { showToast("Configure kernel namespace first.", "error"); return; }
+  const recipient = state.mintRecipient || state.wallet;
+  const rawAmt = token === "A" ? state.mintAmtA : state.mintAmtB;
+  if (!rawAmt || Number(rawAmt) <= 0) { showToast("Enter a mint amount", "error"); return; }
+  const amtWei = toWei(rawAmt);
+  const tokenChannel = token === "A" ? CHANNELS.TOKEN_A : CHANNELS.TOKEN_B;
+  const term = `
+    new ret, adminKeyCh, mintCh in {
+      adminKeyCh!("${ADMIN_KEY}") |
+      ${tokenChannel}!("mint", "${recipient}", ${amtWei}, *adminKeyCh, *mintCh) |
+      for (@res <- mintCh) { ret!(res) }
+    }`;
+  state.loading = true;
+  render();
+  try {
+    await deployWithWalletOrFallback(term);
+    showToast(`Mint TKN${token} submitted for ${fromWei(amtWei)} tokens.`, "success");
+    if (token === "A") state.mintAmtA = ""; else state.mintAmtB = "";
+    await refreshOnchain();
+  } catch (e) {
+    showToast(e.message || "Mint failed", "error");
+  } finally {
+    state.loading = false;
+    render();
+  }
+}
+
 async function doRemoveLiquidity() {
   if (!state.wallet) { showToast("Connect your wallet first", "error"); return; }
   if (!state.lpRemove) { showToast("Enter LP amount to remove", "error"); return; }
@@ -1027,6 +1059,7 @@ function render() {
       <button class="nav-tab ${state.tab==='swap'?'active':''}" onclick="setTab('swap')">Swap</button>
       <button class="nav-tab ${state.tab==='liquidity'?'active':''}" onclick="setTab('liquidity')">Liquidity</button>
       <button class="nav-tab ${state.tab==='pool'?'active':''}" onclick="setTab('pool')">Pool</button>
+      <button class="nav-tab ${state.tab==='mint'?'active':''}" onclick="setTab('mint')" style="border-color:var(--yellow);color:var(--yellow)">Dev Faucet</button>
     </div>
     <div class="flex items-center gap-2">
       <div class="network-badge">
@@ -1046,6 +1079,7 @@ function render() {
     ${state.tab === 'swap' ? renderSwap(tkIn, tkOut, outAmt, impact, priceAB, priceBA) : ''}
     ${state.tab === 'liquidity' ? renderLiquidity(liqBCalc, userLPShare, userReserveA, userReserveB) : ''}
     ${state.tab === 'pool' ? renderPool(priceAB, priceBA) : ''}
+    ${state.tab === 'mint' ? renderMint() : ''}
   </main>
 
   ${state.toast ? `
@@ -1301,6 +1335,98 @@ function renderLiquidity(liqBCalc, userLPShare, userReserveA, userReserveB) {
   `;
 }
 
+function renderMint() {
+  const recipient = state.mintRecipient || state.wallet || "";
+  return `
+  <div class="two-col">
+    <div class="card">
+      <div class="card-title"><div class="dot" style="background:var(--yellow)"></div>Dev Faucet — Mint Test Tokens</div>
+      <p style="font-size:0.8rem;color:var(--muted);margin-bottom:16px;">
+        Mint TKNA and TKNB to any address on DevNet. Uses the hardcoded admin key from the deployed kernel.
+      </p>
+
+      <div class="token-input-wrap">
+        <div class="token-input-label">Recipient Address</div>
+        <div class="token-input-row" style="gap:8px">
+          <input class="token-amount-input" type="text" placeholder="${state.wallet || 'Wallet address'}"
+            value="${state.mintRecipient}"
+            oninput="setState('mintRecipient', this.value)"
+            style="font-family:'Space Mono',monospace;font-size:0.75rem;" />
+          ${state.wallet ? `<button class="slippage-btn" onclick="setState('mintRecipient','${state.wallet}')" style="white-space:nowrap">My wallet</button>` : ''}
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:16px;">
+        <div>
+          <div class="token-input-wrap">
+            <div class="token-input-label">TKNA Amount</div>
+            <div class="token-input-row">
+              <input class="token-amount-input" type="number" placeholder="1000"
+                value="${state.mintAmtA}" oninput="setState('mintAmtA', this.value)" />
+              <div class="token-selector"><div class="token-icon a">TK</div>TKNA</div>
+            </div>
+            <div class="token-balance">Current balance: <span>${fromWei(state.balances[0])}</span> TKNA</div>
+          </div>
+          <button class="action-btn primary" onclick="doMint('A')"
+            ${state.loading || !state.mintAmtA ? 'disabled' : ''}
+            style="margin-top:8px;background:linear-gradient(135deg,#00e5ff,#0066ff)">
+            ${state.loading ? '<span class="spinner"></span>' : ''} Mint TKNA
+          </button>
+        </div>
+
+        <div>
+          <div class="token-input-wrap">
+            <div class="token-input-label">TKNB Amount</div>
+            <div class="token-input-row">
+              <input class="token-amount-input" type="number" placeholder="1000"
+                value="${state.mintAmtB}" oninput="setState('mintAmtB', this.value)" />
+              <div class="token-selector"><div class="token-icon b">TK</div>TKNB</div>
+            </div>
+            <div class="token-balance">Current balance: <span>${fromWei(state.balances[1])}</span> TKNB</div>
+          </div>
+          <button class="action-btn primary" onclick="doMint('B')"
+            ${state.loading || !state.mintAmtB ? 'disabled' : ''}
+            style="margin-top:8px;background:linear-gradient(135deg,#7b5ea7,#e040fb)">
+            ${state.loading ? '<span class="spinner"></span>' : ''} Mint TKNB
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title"><div class="dot" style="background:var(--yellow)"></div>Deployment Info</div>
+      <div class="info-row">
+        <span class="label">Namespace</span>
+        <span class="value text-accent" style="font-family:'Space Mono',monospace">${CONFIG.NAMESPACE || '—'}</span>
+      </div>
+      <div class="info-row">
+        <span class="label">Pool Spender</span>
+        <span class="value" style="font-family:'Space Mono',monospace;font-size:0.75rem">${CONFIG.POOL_SPENDER || '—'}</span>
+      </div>
+      <div class="info-row">
+        <span class="label">Token A Channel</span>
+        <span class="value" style="font-family:'Space Mono',monospace;font-size:0.7rem">asidex:tokenA:${CONFIG.NAMESPACE}</span>
+      </div>
+      <div class="info-row">
+        <span class="label">Token B Channel</span>
+        <span class="value" style="font-family:'Space Mono',monospace;font-size:0.7rem">asidex:tokenB:${CONFIG.NAMESPACE}</span>
+      </div>
+      <div class="info-row">
+        <span class="label">Pair Channel</span>
+        <span class="value" style="font-family:'Space Mono',monospace;font-size:0.7rem">asidex:pair:${CONFIG.NAMESPACE}</span>
+      </div>
+      <hr class="divider" />
+      <div class="card-title"><div class="dot" style="background:var(--yellow)"></div>Debug State</div>
+      <button class="action-btn" onclick="fetchDebugState()"
+        style="background:var(--surface);border:1px solid var(--border);color:var(--muted);margin-bottom:10px">
+        Query debugState
+      </button>
+      <pre id="debug-out" style="font-family:'Space Mono',monospace;font-size:0.7rem;color:var(--muted);white-space:pre-wrap;background:var(--panel);padding:10px;border-radius:8px;margin:0">${state.debugOut || 'Click to fetch...'}</pre>
+    </div>
+  </div>
+  `;
+}
+
 function renderPool(priceAB, priceBA) {
   return `
   <div>
@@ -1365,6 +1491,20 @@ function renderPool(priceAB, priceBA) {
   `;
 }
 
+async function fetchDebugState() {
+  if (!hasKernelConfigured()) { showToast("Configure namespace first.", "error"); return; }
+  const term = `
+    new ret, r in {
+      ${CHANNELS.ROUTER}!("debugState", *r) |
+      for (@res <- r) { ret!(res) }
+    }`;
+  const expr = await explore(term);
+  if (!expr) { state.debugOut = "Error: no response from RNode"; render(); return; }
+  const ints = findExprInts(expr);
+  state.debugOut = `supplyA=${ints[0]||0}\nsupplyB=${ints[1]||0}\nreserveA=${ints[2]||0}\nreserveB=${ints[3]||0}\nlpSupply=${ints[4]||0}`;
+  render();
+}
+
 // ---- Global helpers accessible from inline onclick ----
 window.setTab        = (t) => { state.tab = t; render(); };
 window.setState      = (path, val) => {
@@ -1381,9 +1521,11 @@ window.flipTokens    = () => {
 };
 window.connectWallet = connectWallet;
 window.openUriConfig = openUriConfig;
-window.doSwap           = doSwap;
-window.doAddLiquidity   = doAddLiquidity;
+window.doSwap            = doSwap;
+window.doAddLiquidity    = doAddLiquidity;
 window.doRemoveLiquidity = doRemoveLiquidity;
+window.doMint            = doMint;
+window.fetchDebugState   = fetchDebugState;
 window.fromWei          = fromWei;
 window.state            = state;
 
