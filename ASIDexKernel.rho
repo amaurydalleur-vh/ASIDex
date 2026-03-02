@@ -129,9 +129,8 @@ in {
                     Nil => spendableA!(false)
                     a => { if (a < amount) { spendableA!(false) } else { spendableA!(true) } }
                   }
-                }
-              } |
-              for (@ok <- spendableA) {
+                } |
+                for (@ok <- spendableA) {
                 if (ok == false) { tokenAState!(st) | return!((false, "No allowance")) }
                 else {
                   match bal.get(from) {
@@ -146,19 +145,20 @@ in {
                               Nil => nextAllowA!(allow)
                               a => nextAllowA!(allow.set((from, caller), a - amount))
                             }
-                          }
-                        } |
-                        for (@na <- nextAllowA) {
+                          } |
+                          for (@na <- nextAllowA) {
                           tokenAState!(
                             st
                               .set("balances", bal.set(from, fromBal - amount).set(to, match bal.get(to) { Nil => amount v => v + amount }))
                               .set("allowances", na)
                           ) |
                           return!((true, "OK"))
+                          }
                         }
                       }
                     }
                   }
+                }
                 }
               }
             }
@@ -277,9 +277,8 @@ in {
                     Nil => spendableB!(false)
                     a => { if (a < amount) { spendableB!(false) } else { spendableB!(true) } }
                   }
-                }
-              } |
-              for (@ok <- spendableB) {
+                } |
+                for (@ok <- spendableB) {
                 if (ok == false) { tokenBState!(st) | return!((false, "No allowance")) }
                 else {
                   match bal.get(from) {
@@ -294,19 +293,20 @@ in {
                               Nil => nextAllowB!(allow)
                               a => nextAllowB!(allow.set((from, caller), a - amount))
                             }
-                          }
-                        } |
-                        for (@na <- nextAllowB) {
+                          } |
+                          for (@na <- nextAllowB) {
                           tokenBState!(
                             st
                               .set("balances", bal.set(from, fromBal - amount).set(to, match bal.get(to) { Nil => amount v => v + amount }))
                               .set("allowances", na)
                           ) |
                           return!((true, "OK"))
+                          }
                         }
                       }
                     }
                   }
+                }
                 }
               }
             }
@@ -364,25 +364,30 @@ in {
       for (@ps <- pairState) {
         new mintLP in {
           if (ps.get("lpSupply") == 0) {
-            new sq in { _sqrt!(amtA * amtB, *sq) | for (@v <- sq) { if (v <= 1000) { mintLP!(0) } else { mintLP!(v - 1000) } } }
+            // PoC-safe initial mint: avoid sqrt path on DevNet and mint from min(amtA, amtB) with a tiny lock.
+            if (amtA <= amtB) {
+              if (amtA <= 1) { mintLP!(0) } else { mintLP!(amtA - 1) }
+            } else {
+              if (amtB <= 1) { mintLP!(0) } else { mintLP!(amtB - 1) }
+            }
           } else {
             new aLP, bLP in {
               aLP!(amtA * ps.get("lpSupply") / ps.get("reserveA")) |
               bLP!(amtB * ps.get("lpSupply") / ps.get("reserveB")) |
               for (@a <- aLP) { for (@b <- bLP) { if (a <= b) { mintLP!(a) } else { mintLP!(b) } } }
             }
-          }
-        } |
-        for (@lp <- mintLP) {
+          } |
+          for (@lp <- mintLP) {
           if (lp <= 0 or lp < minLP) { pairState!(ps) | return!((false, "LP below minimum")) }
           else {
             new rA, rB in {
-              @"asidex:tokenA:amaury-v1"!("transferFrom", "asidex:pair:amaury-v1", provider, "asidex:pair:amaury-v1", amtA, *rA) |
+              // PoC-safe path: direct transfer by declared provider (avoids transferFrom/allowance deadlocks on DevNet)
+              @"asidex:tokenA:amaury-v1"!("transfer", provider, "asidex:pair:amaury-v1", amtA, *rA) |
               for (@ra <- rA) {
                 match ra {
                   (false, msg) => { pairState!(ps) | return!((false, msg)) }
                   (true, _) => {
-                    @"asidex:tokenB:amaury-v1"!("transferFrom", "asidex:pair:amaury-v1", provider, "asidex:pair:amaury-v1", amtB, *rB) |
+                    @"asidex:tokenB:amaury-v1"!("transfer", provider, "asidex:pair:amaury-v1", amtB, *rB) |
                     for (@rb <- rB) {
                       match rb {
                         (false, msg) => { pairState!(ps) | return!((false, msg)) }
@@ -407,6 +412,7 @@ in {
                 }
               }
             }
+          }
           }
         }
       }
