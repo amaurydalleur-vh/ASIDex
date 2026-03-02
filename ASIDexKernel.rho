@@ -122,16 +122,16 @@ in {
           bm!(st.get("balances")) | am!(st.get("allowances")) |
           for (@bal <- bm) {
             for (@allow <- am) {
-              new spendable in {
-                if (caller == from) { spendable!(true) }
+              new spendableA in {
+                if (caller == from) { spendableA!(true) }
                 else {
                   match allow.get((from, caller)) {
-                    Nil => spendable!(false)
-                    a => { if (a < amount) { spendable!(false) } else { spendable!(true) } }
+                    Nil => spendableA!(false)
+                    a => { if (a < amount) { spendableA!(false) } else { spendableA!(true) } }
                   }
                 }
               } |
-              for (@ok <- spendable) {
+              for (@ok <- spendableA) {
                 if (ok == false) { tokenAState!(st) | return!((false, "No allowance")) }
                 else {
                   match bal.get(from) {
@@ -270,16 +270,16 @@ in {
           bm!(st.get("balances")) | am!(st.get("allowances")) |
           for (@bal <- bm) {
             for (@allow <- am) {
-              new spendable in {
-                if (caller == from) { spendable!(true) }
+              new spendableB in {
+                if (caller == from) { spendableB!(true) }
                 else {
                   match allow.get((from, caller)) {
-                    Nil => spendable!(false)
-                    a => { if (a < amount) { spendable!(false) } else { spendable!(true) } }
+                    Nil => spendableB!(false)
+                    a => { if (a < amount) { spendableB!(false) } else { spendableB!(true) } }
                   }
                 }
               } |
-              for (@ok <- spendable) {
+              for (@ok <- spendableB) {
                 if (ok == false) { tokenBState!(st) | return!((false, "No allowance")) }
                 else {
                   match bal.get(from) {
