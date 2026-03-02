@@ -801,14 +801,14 @@ async function refreshOnchain() {
 async function deployWithWalletOrFallback(term) {
   // wallet.dev.asichain.io — copy term to clipboard, user pastes in their open IDE session
   await navigator.clipboard.writeText(term);
-  throw new Error("Rholang term copied to clipboard. Paste it in wallet.dev.asichain.io → Smart Contracts and click Deploy.");
+  showToast("Term copied! Paste in wallet.dev.asichain.io → Smart Contracts → Deploy, then press ↻", "info", 8000);
 }
 
 // ---- Toast ----
-function showToast(msg, type = "info") {
+function showToast(msg, type = "info", duration = 4000) {
   state.toast = { msg, type };
   render();
-  setTimeout(() => { state.toast = null; render(); }, 4000);
+  setTimeout(() => { state.toast = null; render(); }, duration);
 }
 
 // ---- Compute swap output ----
@@ -838,25 +838,23 @@ async function doSwap() {
       state.swapIn.tokenIdx === 0 ? state.pool.reserveB : state.pool.reserveA
     );
     const minOut = Math.floor(out * (1 - state.slippage / 100));
+    // Combine approve + swap into one term so only one clipboard paste is needed
     const term = `
-      new ret, s in {
-        ${CHANNELS.ROUTER}!("swapExactTokensForTokens",
-          "${state.wallet}",
-          ${amtIn},
-          ${minOut},
-          "${tkIn.id}",
-          "${tkOut.id}",
-          "${state.wallet}",
-          *s
-        ) |
-        for (@res <- s) { ret!(res) }
-      }`;
-    const approveInTerm = `
-      new ret, a in {
+      new ret, a, s in {
         ${state.swapIn.tokenIdx === 0 ? CHANNELS.TOKEN_A : CHANNELS.TOKEN_B}!("approve", "${state.wallet}", "${state.pool.spender}", ${amtIn}, *a) |
-        for (@res <- a) { ret!(res) }
+        for (@_ <- a) {
+          ${CHANNELS.ROUTER}!("swapExactTokensForTokens",
+            "${state.wallet}",
+            ${amtIn},
+            ${minOut},
+            "${tkIn.id}",
+            "${tkOut.id}",
+            "${state.wallet}",
+            *s
+          ) |
+          for (@res <- s) { ret!(res) }
+        }
       }`;
-    await deployWithWalletOrFallback(approveInTerm);
     await deployWithWalletOrFallback(term);
     showToast("Swap deploy submitted.", "success");
     state.swapIn.amount = "";
@@ -883,34 +881,25 @@ async function doAddLiquidity() {
         : toWei(state.liqB || "0");
     if (!amtB || Number(amtB) <= 0) throw new Error("Invalid token B amount.");
 
-    // Devnet PoC nuance: Pair.rho currently calls transferFrom with caller=provider,
-    // spender is the configured pair spender string.
-    const approveATerm = `
-      new ret, a in {
-        ${CHANNELS.TOKEN_A}!("approve", "${state.wallet}", "${state.pool.spender}", ${amtA}, *a) |
-        for (@res <- a) { ret!(res) }
-      }`;
-    const approveBTerm = `
-      new ret, a in {
-        ${CHANNELS.TOKEN_B}!("approve", "${state.wallet}", "${state.pool.spender}", ${amtB}, *a) |
-        for (@res <- a) { ret!(res) }
-      }`;
-    const addTerm = `
-      new ret, a in {
-        ${CHANNELS.ROUTER}!("addLiquidity",
-          "${state.wallet}",
-          ${amtA},
-          ${amtB},
-          0,
-          *a
-        ) |
-        for (@res <- a) { ret!(res) }
+    // Combine approve A + approve B (parallel) + addLiquidity into one term
+    const term = `
+      new ret, aA, aB, addCh in {
+        ${CHANNELS.TOKEN_A}!("approve", "${state.wallet}", "${state.pool.spender}", ${amtA}, *aA) |
+        ${CHANNELS.TOKEN_B}!("approve", "${state.wallet}", "${state.pool.spender}", ${amtB}, *aB) |
+        for (@_ <- aA; @_ <- aB) {
+          ${CHANNELS.ROUTER}!("addLiquidity",
+            "${state.wallet}",
+            ${amtA},
+            ${amtB},
+            0,
+            *addCh
+          ) |
+          for (@res <- addCh) { ret!(res) }
+        }
       }`;
 
-    await deployWithWalletOrFallback(approveATerm);
-    await deployWithWalletOrFallback(approveBTerm);
-    await deployWithWalletOrFallback(addTerm);
-    showToast("Liquidity deploys submitted (approve A/B + add).", "success");
+    await deployWithWalletOrFallback(term);
+    showToast("Liquidity deploy submitted (approve A+B + add in one tx).", "success");
     state.liqA = "";
     state.liqB = "";
     await refreshOnchain();
@@ -1025,6 +1014,7 @@ function render() {
         <div class="network-dot"></div>
         ASI DevNet
       </div>
+      <button class="wallet-btn" onclick="refreshOnchain()" title="Refresh balances from chain" style="padding:10px 14px;border-color:var(--muted);color:var(--muted)">↻</button>
       <button class="wallet-btn ${state.wallet?'connected':''}" onclick="connectWallet()">
         ${state.wallet ? "● " + shortAddr(state.wallet) : "Connect Wallet"}
       </button>
@@ -1450,6 +1440,7 @@ window.flipTokens    = () => {
   render();
 };
 window.connectWallet = connectWallet;
+window.refreshOnchain    = refreshOnchain;
 window.doSwap            = doSwap;
 window.doAddLiquidity    = doAddLiquidity;
 window.doRemoveLiquidity = doRemoveLiquidity;
