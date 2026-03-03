@@ -585,10 +585,10 @@ const RNODE = {
 };
 
 const CONFIG_DEFAULTS = {
-  NAMESPACE: "dalleurv1",
-  POOL_SPENDER: "asidex:pair:dalleurv1",
+  NAMESPACE: "amaury-v4",
+  POOL_SPENDER: "asidex:pair:amaury-v4",
 };
-const CONFIG_STORAGE_KEY = "asidex_kernel_cfg_v1";
+const CONFIG_STORAGE_KEY = "asidex_kernel_cfg_v2";
 const CONFIG = (() => {
   try {
     const saved = JSON.parse(localStorage.getItem(CONFIG_STORAGE_KEY) || "{}");
